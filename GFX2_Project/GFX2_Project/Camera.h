@@ -8,7 +8,7 @@ using namespace DirectX;
 class Camera
 {
 private:
-	XMMATRIX	ViewMatrix;
+	XMFLOAT4X4	ViewMatrix;
 	POINT		CursorPosition;
 	float		m_fMovementSpeed;
 	float		m_fRotationSpeed;
@@ -22,7 +22,8 @@ public:
 	void HandleInput(float _deltaTime);
 
 	// ===== Accessors / Mutators
-	XMMATRIX GetViewMatrix();
-	XMVECTOR GetPosition();
+	XMFLOAT4X4 GetViewMatrix();
+	XMMATRIX GetViewXMMatrix();
+	XMFLOAT3 GetPosition();
 };
 

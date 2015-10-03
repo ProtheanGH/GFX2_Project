@@ -13,7 +13,7 @@ public:
 	~Object();
 
 	// === Variables
-	XMMATRIX WorldMatrix;
+	XMFLOAT4X4 WorldMatrix;
 	ID3D11Buffer* pVertexBuffer;
 	ID3D11Buffer* pIndexBuffer;
 	ID3D11InputLayout* pInputLayout;

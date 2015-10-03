@@ -21,14 +21,14 @@
 using namespace DirectX;
 using namespace std;
 
-#pragma pack_matrix( row_major )
+#pragma pack_matrix(row_major)
 
 #define BACKBUFFER_WIDTH	1024
 #define BACKBUFFER_HEIGHT	780
 
+// === Macros
 #define SAFE_RELEASE(p) { if(p) { p->Release(); p = nullptr; } }
-
-#define _Debug 1
+#define Float4x4ToXMMAtrix(float4x4) { XMMATRIX(float4x4._11, float4x4._12, float4x4._13, float4x4._14, float4x4._21, float4x4._22, float4x4._23, float4x4._24, float4x4._31, float4x4._32, float4x4._33, float4x4._34, float4x4._41, float4x4._42, float4x4._43, float4x4._44) }
 
 // === Window Class
 class ApplicationWindow
@@ -36,18 +36,20 @@ class ApplicationWindow
 	// === Constant Buffer Structures
 	struct SEND_TO_VRAM_OBJECT
 	{
-		XMMATRIX worldMatrix;
+		XMFLOAT4X4 worldMatrix;
 	};
 	struct SEND_TO_VRAM_SCENE
 	{
-		XMMATRIX viewMatrix;
-		XMMATRIX projectionMatrix;
+		XMFLOAT4X4 viewMatrix;
+		XMFLOAT4X4 projectionMatrix;
 	};
 
 	// === Window Variables
 	HINSTANCE						application;
 	WNDPROC							appWndProc;
 	HWND							window;
+	int								width		= 1024;
+	int								height		= 780;
 	// === DirectX Variables
 	IDXGISwapChain*					pSwapChain;
 	ID3D11Device*					pDevice;
@@ -78,7 +80,7 @@ class ApplicationWindow
 	Object							Skybox;
 	// === Variables
 	Camera							m_Camera;
-	XMMATRIX						ProjectionMatrix;
+	XMFLOAT4X4						ProjectionMatrix;
 	XTime							Time;
 	// === Colors
 	float RED[4];
@@ -97,6 +99,7 @@ public:
 	bool ShutDown();
 	// ===== Public Interface
 	bool Run();
+	void ResizeWindow(int _width, int _height);
 private:
 	// ===== D3D11 Initialization Functions
 	void InitializeDeviceAndSwapChain();
@@ -109,6 +112,7 @@ private:
 	void InitializeConstantBuffers();
 	void InitializeSamplerState();
 	// ===== Priavte Interface
+	void CreateProjectionMatrix();
 	void CreateSkybox();
 	void DrawSkybox();
 	void LoadObjectModel(const char* _path, Object& _object);
@@ -117,6 +121,9 @@ private:
 	void DrawScene();
 	void UpdateSceneBuffer();
 };
+
+// === Global Tracker of the Application
+ApplicationWindow* pApplication;
 
 // ===== Constructor ===== //
 ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
@@ -150,7 +157,7 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	RECT window_size = { 0, 0, BACKBUFFER_WIDTH, BACKBUFFER_HEIGHT };
 	AdjustWindowRect(&window_size, WS_OVERLAPPEDWINDOW, false);
 
-	window = CreateWindow(	L"DirectXApplication", L"GFX II Project",	WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME|WS_MAXIMIZEBOX), 
+	window = CreateWindow(	L"DirectXApplication", L"GFX II Project",	WS_OVERLAPPEDWINDOW  /*& ~(WS_THICKFRAME|WS_MAXIMIZEBOX)*/, 
 							CW_USEDEFAULT, CW_USEDEFAULT, window_size.right-window_size.left, window_size.bottom-window_size.top,					
 							NULL, NULL,	application, this );												
 
@@ -173,15 +180,8 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	LoadObjects();
 	// ===
 
-	// === Setup Projection Matrix
-	float nearPlane = 0.1, farPlane = 100;
-	float VertFOV = XMConvertToRadians(65), AspectRatio = BACKBUFFER_WIDTH / BACKBUFFER_HEIGHT;
-	float yScale = (1 / tan(VertFOV * 0.5)), xScale = yScale * AspectRatio;
-	ProjectionMatrix = XMMATRIX(xScale, 0, 0, 0,
-		0, yScale, 0, 0,
-		0, 0, farPlane / (farPlane - nearPlane), 1,
-		0, 0, (-(farPlane * nearPlane)) / (farPlane - nearPlane), 0);
-	toShaderScene.projectionMatrix = ProjectionMatrix;
+	// === Create the Projection Matrix
+	CreateProjectionMatrix();
 	// ===
 }
 // ======================= //
@@ -225,7 +225,7 @@ bool ApplicationWindow::Run()
 	// === Set D3D11
 	pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, pDepthView);
 	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
-	pDeviceContext->RSSetViewports(1, &viewPort);
+//	pDeviceContext->RSSetViewports(1, &viewPort);
 	pDeviceContext->ClearRenderTargetView(pRenderTargetView, BLUE);
 	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
 
@@ -238,13 +238,52 @@ bool ApplicationWindow::Run()
 	pSwapChain->Present(0, 0);
 	return true; 
 }
+
+void ApplicationWindow::ResizeWindow(int _width, int _height)
+{
+	if (pSwapChain) {
+		width = _width;
+		height = _height;
+
+		pDeviceContext->OMSetRenderTargets(0, 0, 0);
+
+		// === Release the Render Target view
+		pRenderTargetView->Release();
+
+		HRESULT result;
+		// Preserve the existing buffer count and format.
+		// Automatically choose the width and height to match the client rect for HWNDs.
+		result = pSwapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
+
+		// === Create a render-target-view.
+		ID3D11Texture2D* pBuffer;
+		result = pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBuffer);
+
+		result = pDevice->CreateRenderTargetView(pBuffer, NULL, &pRenderTargetView);
+
+		pBuffer->Release();
+
+		pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
+
+		// === Set up the viewport.
+		SetupViewport();
+
+		// === Create the Projection Matrix
+		CreateProjectionMatrix();
+
+		// === Recreate the Depth Buffer
+		SAFE_RELEASE(pDepthStencil);
+		SAFE_RELEASE(pDepthView);
+		InitializeDepthView();
+	}
+}
 // ============================ //
 
 // ===== D3D11 Initialization Functions ===== //
 void ApplicationWindow::InitializeDeviceAndSwapChain()
 {
 	UINT flag = NULL;
-#if _Debug
+#if _DEBUG
 	flag = D3D11_CREATE_DEVICE_DEBUG;
 #endif
 	// === Array of Feature Levels
@@ -261,7 +300,7 @@ void ApplicationWindow::InitializeDeviceAndSwapChain()
 	swapDesc.OutputWindow = window;
 	swapDesc.Windowed = true;
 	swapDesc.SampleDesc.Count = 2;
-	swapDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+	swapDesc.Flags = NULL;
 	// === Feature Level 
 	D3D_FEATURE_LEVEL featureLevel;
 
@@ -281,20 +320,22 @@ void ApplicationWindow::SetupViewport()
 	DXGI_SWAP_CHAIN_DESC swapDesc;
 	ZeroMemory(&swapDesc, sizeof(swapDesc));
 	pSwapChain->GetDesc(&swapDesc);
-	viewPort.Height = swapDesc.BufferDesc.Height;
-	viewPort.Width = swapDesc.BufferDesc.Width;
+	viewPort.Height = width;
+	viewPort.Width = width;
 	viewPort.MinDepth = 0;
 	viewPort.MaxDepth = 1;
 	viewPort.TopLeftX = 0;
 	viewPort.TopLeftY = 0;
+
+	pDeviceContext->RSSetViewports(1, &viewPort);
 }
 
 void ApplicationWindow::InitializeDepthView()
 {
 	// === Create the Depth-Stencil
 	D3D11_TEXTURE2D_DESC depthDesc;
-	depthDesc.Width = BACKBUFFER_WIDTH;
-	depthDesc.Height = BACKBUFFER_HEIGHT;
+	depthDesc.Width = width;
+	depthDesc.Height = height;
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
@@ -398,10 +439,22 @@ void ApplicationWindow::InitializeConstantBuffers()
 // ========================================== //
 
 // ===== Private Interface ===== //
+void ApplicationWindow::CreateProjectionMatrix()
+{
+	float nearPlane = 0.1, farPlane = 100;
+	float VertFOV = XMConvertToRadians(65), AspectRatio = width / height;
+	float yScale = (1 / tan(VertFOV * 0.5)), xScale = yScale * AspectRatio;
+	ProjectionMatrix = XMFLOAT4X4(xScale, 0, 0, 0,
+		0, yScale, 0, 0,
+		0, 0, farPlane / (farPlane - nearPlane), 1,
+		0, 0, (-(farPlane * nearPlane)) / (farPlane - nearPlane), 0);
+	toShaderScene.projectionMatrix = ProjectionMatrix;
+}
+
 void ApplicationWindow::CreateSkybox()
 {
 	// === Setup the World Matrix
-	Skybox.WorldMatrix = XMMatrixIdentity();
+	XMStoreFloat4x4(&Skybox.WorldMatrix, XMMatrixIdentity());
 
 	// === Set up the Vertex Buffer and Index Buffer
 	Vertex vertices[24];
@@ -498,8 +551,8 @@ void ApplicationWindow::CreateSkybox()
 void ApplicationWindow::DrawSkybox()
 {
 	// === Move the Skybox to the Camera's position
-	XMVECTOR cameraPos = m_Camera.GetPosition();
-	Skybox.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, XMVectorGetX(cameraPos), XMVectorGetY(cameraPos), XMVectorGetZ(cameraPos), 1);
+	XMFLOAT3 cameraPos = m_Camera.GetPosition();
+	Skybox.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, cameraPos.x, cameraPos.y, cameraPos.z, 1);
 
 	// === Draw the Skybox
 	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -572,7 +625,7 @@ void ApplicationWindow::LoadObjects()
 	// === Load the Star Object
 	{
 		// == Set the WorldMatrix
-		Star.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1);
+		Star.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1);
 		// == Set the Vertex Buffer
 		Vertex_PositionColor vertices[17];
 		vertices[0] = Vertex_PositionColor(0.0f, 0.0f, -0.15f, 1, WHITE);
@@ -626,7 +679,7 @@ void ApplicationWindow::LoadObjects()
 	// === Load the Ground
 	{
 		// == Set the WorldMatrix
-		Ground.WorldMatrix = XMMatrixIdentity();
+		XMStoreFloat4x4(&Ground.WorldMatrix, XMMatrixIdentity());
 		// == Set the Vertex Buffer
 		Vertex groundVerts[4];
 		float radius = 4.0f;
@@ -688,7 +741,7 @@ void ApplicationWindow::LoadObjects()
 	// === Load the Bamboo
 	{
 		// == Set the WorldMatrix
-		Bamboo.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0.2, 3, 1);
+		Bamboo.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0.2, 3, 1);
 		// == Load the Obj File, Set up Vertex and Index Buffers
 		LoadObjectModel("SingleBamboo.obj", Bamboo);
 		// == Set the Shaders
@@ -775,9 +828,9 @@ LRESULT CALLBACK WndProc(HWND hWnd,	UINT message, WPARAM wparam, LPARAM lparam )
 int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE, LPTSTR, int )
 {
 	srand(unsigned int(time(0)));
-	ApplicationWindow myApp(hInstance, (WNDPROC)WndProc);
+	pApplication = new ApplicationWindow(hInstance, (WNDPROC)WndProc);
     MSG msg; ZeroMemory( &msg, sizeof( msg ) );
-    while ( msg.message != WM_QUIT && myApp.Run() )
+	while (msg.message != WM_QUIT && pApplication->Run())
     {	
 	    if ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
         { 
@@ -785,7 +838,8 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE, LPTSTR, int )
             DispatchMessage( &msg ); 
         }
     }
-	myApp.ShutDown(); 
+	pApplication->ShutDown();
+	delete pApplication;
 	return 0; 
 }
 
@@ -795,8 +849,16 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 		message = WM_DESTROY;
     switch ( message )
     {
-        case ( WM_DESTROY ): { PostQuitMessage( 0 ); }
+        case ( WM_DESTROY ): { 
+			PostQuitMessage( 0 ); 
+		}
         break;
+		case (WM_SIZE) : {
+			if (pApplication) {
+				pApplication->ResizeWindow(LOWORD(lParam), HIWORD(lParam));
+			}
+		}
+			break;
     }
     return DefWindowProc( hWnd, message, wParam, lParam );
 }

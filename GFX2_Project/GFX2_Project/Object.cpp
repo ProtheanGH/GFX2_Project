@@ -5,7 +5,7 @@
 // ===== Constructor / Destructor ===== //
 Object::Object()
 {
-	WorldMatrix = XMMatrixIdentity();
+	XMStoreFloat4x4(&WorldMatrix, XMMatrixIdentity());
 	pVertexBuffer = nullptr;
 	pIndexBuffer = nullptr;
 	pInputLayout = nullptr;

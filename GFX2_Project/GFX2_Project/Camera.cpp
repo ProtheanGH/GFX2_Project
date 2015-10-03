@@ -1,9 +1,11 @@
 #include "Camera.h"
 
+#define Float4x4ToXMMAtrix(float4x4) { XMMATRIX(float4x4._11, float4x4._12, float4x4._13, float4x4._14, float4x4._21, float4x4._22, float4x4._23, float4x4._24, float4x4._31, float4x4._32, float4x4._33, float4x4._34, float4x4._41, float4x4._42, float4x4._43, float4x4._44) }
+
 // ===== Constructor / Destructor ===== //
 Camera::Camera()
 {
-	ViewMatrix = XMMatrixIdentity();
+	XMStoreFloat4x4(&ViewMatrix, XMMatrixIdentity());
 	CursorPosition.x = -1;
 	m_fMovementSpeed = 1;
 	m_fRotationSpeed = 1;
@@ -18,30 +20,31 @@ Camera::~Camera()
 // ===== Interface ===== //
 void Camera::HandleInput(float _deltaTime)
 {
-	XMVECTOR determinant = XMMatrixDeterminant(ViewMatrix);
-	ViewMatrix = XMMatrixInverse(&determinant, ViewMatrix);
+	XMMATRIX matrix = Float4x4ToXMMAtrix(ViewMatrix);
+	XMVECTOR determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
 	// Forward / Backward Movement (Z-Axis)
 	if (GetAsyncKeyState('W')) {
-		ViewMatrix = XMMatrixMultiply(XMMatrixTranslation(0, 0, _deltaTime * m_fMovementSpeed), ViewMatrix);
+		matrix = XMMatrixMultiply(XMMatrixTranslation(0, 0, _deltaTime * m_fMovementSpeed), matrix);
 	}
 	else if (GetAsyncKeyState('S')) {
-		ViewMatrix = XMMatrixMultiply(XMMatrixTranslation(0, 0, _deltaTime * -m_fMovementSpeed), ViewMatrix);
+		matrix = XMMatrixMultiply(XMMatrixTranslation(0, 0, _deltaTime * -m_fMovementSpeed), matrix);
 	}
 
 	// Sidewards Movement (X-Axis)
 	if (GetAsyncKeyState('A')) {
-		ViewMatrix = XMMatrixMultiply(XMMatrixTranslation(_deltaTime * -m_fMovementSpeed, 0, 0), ViewMatrix);
+		matrix = XMMatrixMultiply(XMMatrixTranslation(_deltaTime * -m_fMovementSpeed, 0, 0), matrix);
 	}
 	else if (GetAsyncKeyState('D')) {
-		ViewMatrix = XMMatrixMultiply(XMMatrixTranslation(_deltaTime * m_fMovementSpeed, 0, 0), ViewMatrix);
+		matrix = XMMatrixMultiply(XMMatrixTranslation(_deltaTime * m_fMovementSpeed, 0, 0), matrix);
 	}
 
 	// Fly Up / Down (Y-Axis)
 	if (GetAsyncKeyState('E')) {
-		ViewMatrix = XMMatrixMultiply(ViewMatrix, XMMatrixTranslation(0, _deltaTime * m_fMovementSpeed, 0));
+		matrix = XMMatrixMultiply(matrix, XMMatrixTranslation(0, _deltaTime * m_fMovementSpeed, 0));
 	}
 	else if (GetAsyncKeyState('Q')) {
-		ViewMatrix = XMMatrixMultiply(ViewMatrix, XMMatrixTranslation(0, _deltaTime * -m_fMovementSpeed, 0));
+		matrix = XMMatrixMultiply(matrix, XMMatrixTranslation(0, _deltaTime * -m_fMovementSpeed, 0));
 	}
 
 	// Camera Rotation
@@ -54,16 +57,16 @@ void Camera::HandleInput(float _deltaTime)
 		float distance;
 		// === Left / Right Rotation
 		if (newCursorPos.x != CursorPosition.x) {
-			XMVECTOR position = ViewMatrix.r[3];
-			ViewMatrix = XMMatrixMultiply(ViewMatrix, XMMatrixTranslation(0, 0, 0));
+			XMVECTOR position = matrix.r[3];
+			matrix = XMMatrixMultiply(matrix, XMMatrixTranslation(0, 0, 0));
 			distance = CursorPosition.x - newCursorPos.x;
-			ViewMatrix = XMMatrixMultiply(ViewMatrix, XMMatrixRotationY(-distance * 0.0174532925f));
-			ViewMatrix.r[3] = position;
+			matrix = XMMatrixMultiply(matrix, XMMatrixRotationY(-distance * 0.0174532925f));
+			matrix.r[3] = position;
 		}
 		// === Up / Down Rotation
 		if (newCursorPos.y != CursorPosition.y) {
 			distance = CursorPosition.y - newCursorPos.y;
-			ViewMatrix = XMMatrixMultiply(XMMatrixRotationX(-distance * 0.0174532925f), ViewMatrix);
+			matrix = XMMatrixMultiply(XMMatrixRotationX(-distance * 0.0174532925f), matrix);
 		}
 
 		CursorPosition = newCursorPos;
@@ -74,24 +77,36 @@ void Camera::HandleInput(float _deltaTime)
 
 	// Quick Reset
 	if (GetAsyncKeyState(VK_SPACE)) {
-		ViewMatrix = XMMatrixIdentity();
+		matrix = XMMatrixIdentity();
 	}
 
 	// === Update the View Matrix
-	determinant = XMMatrixDeterminant(ViewMatrix);
-	ViewMatrix = XMMatrixInverse(&determinant, ViewMatrix);
+	determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
+	XMStoreFloat4x4(&ViewMatrix, matrix);
 }
 // ===================== //
 
 // ===== Accessors / Mutators ===== //
-XMMATRIX Camera::GetViewMatrix()
+XMFLOAT4X4 Camera::GetViewMatrix()
 {
 	return ViewMatrix;
 }
 
-XMVECTOR Camera::GetPosition()
+XMMATRIX Camera::GetViewXMMatrix()
 {
-	XMVECTOR determinant = XMMatrixDeterminant(ViewMatrix);
-	return XMMatrixInverse(&determinant, ViewMatrix).r[3];
+	return XMMATRIX(ViewMatrix._11, ViewMatrix._12, ViewMatrix._13, ViewMatrix._14,
+		ViewMatrix._21, ViewMatrix._22, ViewMatrix._23, ViewMatrix._24,
+		ViewMatrix._31, ViewMatrix._32, ViewMatrix._33, ViewMatrix._34,
+		ViewMatrix._41, ViewMatrix._42, ViewMatrix._43, ViewMatrix._44);
+}
+
+XMFLOAT3 Camera::GetPosition()
+{
+	XMMATRIX matrix = Float4x4ToXMMAtrix(ViewMatrix);
+	XMVECTOR determinant = XMMatrixDeterminant(matrix);
+	XMFLOAT3 position;
+	XMStoreFloat3(&position, XMMatrixInverse(&determinant, matrix).r[3]);
+	return position;
 }
 // ================================ //
