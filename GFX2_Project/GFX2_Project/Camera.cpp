@@ -88,4 +88,10 @@ XMMATRIX Camera::GetViewMatrix()
 {
 	return ViewMatrix;
 }
+
+XMVECTOR Camera::GetPosition()
+{
+	XMVECTOR determinant = XMMatrixDeterminant(ViewMatrix);
+	return XMMatrixInverse(&determinant, ViewMatrix).r[3];
+}
 // ================================ //

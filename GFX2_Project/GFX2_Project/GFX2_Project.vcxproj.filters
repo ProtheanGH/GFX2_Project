@@ -40,6 +40,10 @@
   <ItemGroup>
     <FxCompile Include="VertexColor_PS.hlsl" />
     <FxCompile Include="VertexColor_VS.hlsl" />
+    <FxCompile Include="Model_PS.hlsl" />
+    <FxCompile Include="Model_VS.hlsl" />
+    <FxCompile Include="Skybox_PS.hlsl" />
+    <FxCompile Include="Skybox_VS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Color.h">
@@ -64,6 +68,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DDSTextureLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ObjLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Skybox_PS.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Skybox_VS.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Math.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

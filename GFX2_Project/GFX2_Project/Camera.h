@@ -23,5 +23,6 @@ public:
 
 	// ===== Accessors / Mutators
 	XMMATRIX GetViewMatrix();
+	XMVECTOR GetPosition();
 };
 

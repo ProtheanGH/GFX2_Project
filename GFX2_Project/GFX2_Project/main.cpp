@@ -6,10 +6,15 @@
 #include "Camera.h"
 #include "DDSTextureLoader.h"
 #include "Object.h"
+#include "ObjLoader.h"
 #include "Vertex_Inputs.h"
 #include "XTime.h"
 
 // === Include Compiled Shaders
+#include "Model_PS.h"
+#include "Model_VS.h"
+#include "Skybox_PS.h"
+#include "Skybox_VS.h"
 #include "VertexColor_PS.h"
 #include "VertexColor_VS.h"
 
@@ -55,9 +60,13 @@ class ApplicationWindow
 	ID3D11RasterizerState*			pRS_CullBack;
 	ID3D11RasterizerState*			pRS_CullFront;
 	// === Constant Buffers
-	ID3D11Buffer* pObjectConstantBuffer;
-	ID3D11Buffer* pSceneConstantBuffer;
+	ID3D11Buffer*					pObjectConstantBuffer;
+	ID3D11Buffer*					pSceneConstantBuffer;
 	// === Shaders
+	ID3D11VertexShader*				pModel_VS;
+	ID3D11PixelShader*				pModel_PS;
+	ID3D11VertexShader*				pSkybox_VS;
+	ID3D11PixelShader*				pSkybox_PS;
 	ID3D11VertexShader*				pVertexColor_VS;
 	ID3D11PixelShader*				pVertexColor_PS;
 	SEND_TO_VRAM_SCENE				toShaderScene;
@@ -65,6 +74,8 @@ class ApplicationWindow
 	// === Scene Objects
 	Object							Star;
 	Object							Ground;
+	Object							Bamboo;
+	Object							Skybox;
 	// === Variables
 	Camera							m_Camera;
 	XMMATRIX						ProjectionMatrix;
@@ -96,7 +107,11 @@ private:
 	void InitializeRasterizerStates();
 	void InitializeShaders();
 	void InitializeConstantBuffers();
+	void InitializeSamplerState();
 	// ===== Priavte Interface
+	void CreateSkybox();
+	void DrawSkybox();
+	void LoadObjectModel(const char* _path, Object& _object);
 	void LoadObjects();
 	void DrawObject(Object* _object);
 	void DrawScene();
@@ -154,6 +169,7 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	// ===
 
 	// === Other Initializations
+	CreateSkybox();
 	LoadObjects();
 	// ===
 
@@ -185,6 +201,12 @@ bool ApplicationWindow::ShutDown()
 	SAFE_RELEASE(pRS_CullFront);
 	SAFE_RELEASE(pObjectConstantBuffer);
 	SAFE_RELEASE(pSceneConstantBuffer);
+	SAFE_RELEASE(pModel_PS);
+	SAFE_RELEASE(pModel_VS);
+	SAFE_RELEASE(pSkybox_PS);
+	SAFE_RELEASE(pSkybox_VS);
+	SAFE_RELEASE(pVertexColor_PS);
+	SAFE_RELEASE(pVertexColor_VS);
 
 	UnregisterClass(L"DirectXApplication", application);
 	return true;
@@ -208,6 +230,8 @@ bool ApplicationWindow::Run()
 	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
 
 	UpdateSceneBuffer();
+
+	DrawSkybox();
 
 	DrawScene();
 
@@ -337,6 +361,13 @@ void ApplicationWindow::InitializeRasterizerStates()
 
 void ApplicationWindow::InitializeShaders()
 {
+	// === Model Shaders
+	pDevice->CreateVertexShader(&Model_VS, sizeof(Model_VS), NULL, &pModel_VS);
+	pDevice->CreatePixelShader(&Model_PS, sizeof(Model_PS), NULL, &pModel_PS);
+	// === Skybox Shaders
+	pDevice->CreateVertexShader(&Skybox_VS, sizeof(Skybox_VS), NULL, &pSkybox_VS);
+	pDevice->CreatePixelShader(&Skybox_PS, sizeof(Skybox_PS), NULL, &pSkybox_PS);
+	// === VertexColor Shaders
 	pDevice->CreateVertexShader(&VertexColor_VS, sizeof(VertexColor_VS), NULL, &pVertexColor_VS);
 	pDevice->CreatePixelShader(&VertexColor_PS, sizeof(VertexColor_PS), NULL, &pVertexColor_PS);
 }
@@ -367,40 +398,61 @@ void ApplicationWindow::InitializeConstantBuffers()
 // ========================================== //
 
 // ===== Private Interface ===== //
-void ApplicationWindow::LoadObjects()
+void ApplicationWindow::CreateSkybox()
 {
+	// === Setup the World Matrix
+	Skybox.WorldMatrix = XMMatrixIdentity();
+
+	// === Set up the Vertex Buffer and Index Buffer
+	Vertex vertices[24];
+	// == Front Face
+	vertices[0] = Vertex(-5, 5, 5, 1, 0, 0.001f);
+	vertices[1] = Vertex(5, 5, 5, 1, 0.5f, 0.001f);
+	vertices[2] = Vertex(-5, -5, 5, 1, 0, 0.25f);
+	vertices[3] = Vertex(5, -5, 5, 1, 0.5f, 0.25f);
+	// == Back Face
+	vertices[4] = Vertex(5, 5, -5, 1, 0.5f, 0.001f);
+	vertices[5] = Vertex(-5, 5, -5, 1, 1, 0.001f);
+	vertices[6] = Vertex(5, -5, -5, 1, 0.5f, 0.25f);
+	vertices[7] = Vertex(-5, -5, -5, 1, 1, 0.25f);
+	// == Left Face
+	vertices[8] = Vertex(-5, 5, -5, 1, 0, 0.25f);
+	vertices[9] = Vertex(-5, 5, 5, 1, 0.5f, 0.25f);
+	vertices[10] = Vertex(-5, -5, -5, 1, 0, 0.5f);
+	vertices[11] = Vertex(-5, -5, 5, 1, 0.5, 0.5f);
+	// == Right Face
+	vertices[12] = Vertex(5, 5, 5, 1, 0.5f, 0.25f);
+	vertices[13] = Vertex(5, 5, -5, 1, 1, 0.25f);
+	vertices[14] = Vertex(5, -5, 5, 1, 0.5f, 0.5f);
+	vertices[15] = Vertex(5, -5, -5, 1, 1, 0.5f);
+	// == Top Face
+	vertices[16] = Vertex(-5, 5, -5, 1, 0, 0.5f);
+	vertices[17] = Vertex(5, 5, -5, 1, 0.5f, 0.5f);
+	vertices[18] = Vertex(-5, 5, 5, 1, 0, 0.74f);
+	vertices[19] = Vertex(5, 5, 5, 1, 0.5f, 0.74f);
+	// == Bottom Face
+	vertices[20] = Vertex(-5, -5, 5, 1, 0.5f, 0.5f);
+	vertices[21] = Vertex(5, -5, 5, 1, 1, 0.5f);
+	vertices[22] = Vertex(-5, -5, -5, 1, 0.5f, 0.74f);
+	vertices[23] = Vertex(5, -5, -5, 1, 1, 0.74f);
+	// == Triangles (Indexes)
+	unsigned int indexes[] = { 0, 1, 3, 0, 3, 2, 4, 5, 7, 4, 7, 6, 8, 9, 11, 8, 11, 10, 12, 13, 15, 12, 15, 14, 16, 17, 19, 16, 19, 18, 20, 21, 23, 20, 23, 22 };
+	// == Setup Vertex Buffer
 	D3D11_BUFFER_DESC bufferDesc;
 	D3D11_SUBRESOURCE_DATA initData;
-	// === Load the Star Object
-	// == Set the WorldMatrix
-	Star.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 2, 1);
-	// == Set the Vertex Buffer
-	Vertex_PositionColor vertices[17];
-	vertices[0] = Vertex_PositionColor(0.0f, 0.0f, -0.15f, 1, WHITE);
-	vertices[16] = Vertex_PositionColor(0.0f, 0.0f, 0.15f, 1, WHITE);
-	float outerAngle = 90.0f, innerAngle = 270.0f;
-	for (int i = 1; i < 15; i += 3) {
-		vertices[i] = Vertex_PositionColor(0.5f * cos(outerAngle * 0.0174532925f), 0.5f * sin(outerAngle * 0.0174532925f), 0.0f, 1);
-		vertices[i + 1] = Vertex_PositionColor(0.2f * cos(innerAngle * 0.0174532925f), 0.2f * sin(innerAngle * 0.0174532925f), -0.07f, 1, DARKRED);
-		vertices[i + 2] = Vertex_PositionColor(0.2f * cos(innerAngle * 0.0174532925f), 0.2f * sin(innerAngle * 0.0174532925f), 0.07f, 1, DARKRED);
-		outerAngle += 72;
-		innerAngle += 72;
-	}
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	bufferDesc.ByteWidth = sizeof(vertices);
 	bufferDesc.CPUAccessFlags = NULL;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
-	bufferDesc.StructureByteStride = 8;
 
 	initData.pSysMem = vertices;
 	initData.SysMemPitch = 0;
 	initData.SysMemSlicePitch = 0;
 
-	pDevice->CreateBuffer(&bufferDesc, &initData, &Star.pVertexBuffer);
-	// == Set the Index Buffer
-	unsigned int indexes[] = { 1, 0, 11, 1, 8, 0, 13, 0, 8, 13, 5, 0, 10, 0, 5, 10, 2, 0, 7, 0, 2, 7, 14, 0, 4, 0, 14, 4, 11, 0, 1, 12, 16, 1, 16, 9, 13, 9, 16, 13, 16, 6, 10, 6, 16, 10, 16, 3, 7, 3, 16, 7, 16, 15, 4, 15, 16, 4, 16, 12, 1, 9, 8, 13, 8, 9, 13, 6, 5, 10, 5, 6, 10, 3, 2, 7, 2, 3, 7, 15, 14, 4, 14, 15, 4, 12, 11, 1, 11, 12 };
+	pDevice->CreateBuffer(&bufferDesc, &initData, &Skybox.pVertexBuffer);
+	// == Index Buffer
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	bufferDesc.ByteWidth = sizeof(indexes);
@@ -411,20 +463,254 @@ void ApplicationWindow::LoadObjects()
 	initData.pSysMem = indexes;
 	initData.SysMemPitch = 0;
 	initData.SysMemSlicePitch = 0;
-	
-	pDevice->CreateBuffer(&bufferDesc, &initData, &Star.pIndexBuffer);
-	// == Set the Shaders
-	Star.pVertexShader = pVertexColor_VS;
-	Star.pPixelShader = pVertexColor_PS;
-	// == Set the InputLayout
-	pDevice->CreateInputLayout(Layout_Vertex_PositionColor, 2, VertexColor_VS, sizeof(VertexColor_VS), &Star.pInputLayout);
+
+	pDevice->CreateBuffer(&bufferDesc, &initData, &Skybox.pIndexBuffer);
+	// == Vertex Size
+	Skybox.VertexSize = sizeof(Vertex);
+	// == Number of Indexes
+	Skybox.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+
+	// === Create the InputLayout
+	pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Skybox_VS, sizeof(Skybox_VS), &Skybox.pInputLayout);
+
+	// === Setup the Shaders
+	Skybox.pPixelShader = pSkybox_PS;
+	Skybox.pVertexShader = pSkybox_VS;
+
+	// == Create the ShaderResourceView
+	CreateDDSTextureFromFile(pDevice, L"NebulaSkybox.dds", NULL, &Skybox.pShaderResourceView);
+
+	// === Setup the Sampler State
+	D3D11_SAMPLER_DESC samplerDesc;
+	samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.MinLOD = -FLT_MAX;
+	samplerDesc.MaxLOD = FLT_MAX;
+	samplerDesc.MipLODBias = 0.0f;
+	samplerDesc.MaxAnisotropy = 1;
+	samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+	pDevice->CreateSamplerState(&samplerDesc, &Skybox.pSamplerState);
+}
+
+void ApplicationWindow::DrawSkybox()
+{
+	// === Move the Skybox to the Camera's position
+	XMVECTOR cameraPos = m_Camera.GetPosition();
+	Skybox.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, XMVectorGetX(cameraPos), XMVectorGetY(cameraPos), XMVectorGetZ(cameraPos), 1);
+
+	// === Draw the Skybox
+	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	DrawObject(&Skybox);
+
+	// === Clear the Depth Buffer
+	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
+}
+
+// - LoadObjectModel
+// --- Loads in the data from an obj file
+// --- Sets up the Vertex Buffer, Index Buffer, Vertex Size, and Number of Indexes
+void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
+{
+	vector<Vector3> positions, uvs, normals;
+	vector<Vertex> vertices;
+	vector<unsigned int> indexes;
+	// === Load the Data from the filepath
+	LoadObjFile(_path, positions, uvs, normals);
+	// === Cycle through the data, setting up the actaul object
+	Vertex vert;
+	Vertex objectVertices[444]; // = new Vertex[positions.size()];
+	unsigned int objectIndexes[444]; // = new unsigned int[positions.size()];
+	for (unsigned int i = 0; i < positions.size(); i++) {
+		objectVertices[i] = Vertex(positions[i].x, positions[i].y, positions[i].z, 1, uvs[i].x, uvs[i].y, uvs[i].z, normals[i].x, normals[i].y, normals[i].z);
+		objectIndexes[i] = i;
+	}
+	// === Setup the Object
+	// == Vertex Buffer
+	D3D11_BUFFER_DESC bufferDesc;
+	D3D11_SUBRESOURCE_DATA initData;
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(objectVertices);
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+
+//	memcpy(&initData.pSysMem, objectVertices, sizeof(objectVertices) / sizeof(Vertex));
+	initData.pSysMem = &objectVertices;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	pDevice->CreateBuffer(&bufferDesc, &initData, &_object.pVertexBuffer);
+	// == Index Buffer
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(objectIndexes);
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+//	memcpy(&initData.pSysMem, &objectIndexes, sizeof(objectIndexes) / sizeof(unsigned int));
+	initData.pSysMem = objectIndexes;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	pDevice->CreateBuffer(&bufferDesc, &initData, &_object.pIndexBuffer);
 	// == Set the VertexSize
-	Star.VertexSize = sizeof(Vertex_PositionColor);
+	_object.VertexSize = sizeof(Vertex);
 	// == Set the Number of Vertices
-	Star.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+	_object.NumIndexes = sizeof(objectIndexes) / sizeof(unsigned int);
+}
+
+void ApplicationWindow::LoadObjects()
+{
+	D3D11_BUFFER_DESC bufferDesc;
+	D3D11_SUBRESOURCE_DATA initData;
+	D3D11_SAMPLER_DESC samplerDesc;
+	// === Load the Star Object
+	{
+		// == Set the WorldMatrix
+		Star.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1);
+		// == Set the Vertex Buffer
+		Vertex_PositionColor vertices[17];
+		vertices[0] = Vertex_PositionColor(0.0f, 0.0f, -0.15f, 1, WHITE);
+		vertices[16] = Vertex_PositionColor(0.0f, 0.0f, 0.15f, 1, WHITE);
+		float outerAngle = 90.0f, innerAngle = 270.0f;
+		for (int i = 1; i < 15; i += 3) {
+			vertices[i] = Vertex_PositionColor(0.5f * cos(outerAngle * 0.0174532925f), 0.5f * sin(outerAngle * 0.0174532925f), 0.0f, 1);
+			vertices[i + 1] = Vertex_PositionColor(0.2f * cos(innerAngle * 0.0174532925f), 0.2f * sin(innerAngle * 0.0174532925f), -0.07f, 1, DARKRED);
+			vertices[i + 2] = Vertex_PositionColor(0.2f * cos(innerAngle * 0.0174532925f), 0.2f * sin(innerAngle * 0.0174532925f), 0.07f, 1, DARKRED);
+			outerAngle += 72;
+			innerAngle += 72;
+		}
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(vertices);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		bufferDesc.StructureByteStride = 8;
+
+		initData.pSysMem = vertices;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &Star.pVertexBuffer);
+		// == Set the Index Buffer
+		unsigned int indexes[] = { 1, 0, 11, 1, 8, 0, 13, 0, 8, 13, 5, 0, 10, 0, 5, 10, 2, 0, 7, 0, 2, 7, 14, 0, 4, 0, 14, 4, 11, 0, 1, 12, 16, 1, 16, 9, 13, 9, 16, 13, 16, 6, 10, 6, 16, 10, 16, 3, 7, 3, 16, 7, 16, 15, 4, 15, 16, 4, 16, 12, 1, 9, 8, 13, 8, 9, 13, 6, 5, 10, 5, 6, 10, 3, 2, 7, 2, 3, 7, 15, 14, 4, 14, 15, 4, 12, 11, 1, 11, 12 };
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(indexes);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+		initData.pSysMem = indexes;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &Star.pIndexBuffer);
+		// == Set the Shaders
+		Star.pVertexShader = pVertexColor_VS;
+		Star.pPixelShader = pVertexColor_PS;
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex_PositionColor, 2, VertexColor_VS, sizeof(VertexColor_VS), &Star.pInputLayout);
+		// == Set the VertexSize
+		Star.VertexSize = sizeof(Vertex_PositionColor);
+		// == Set the Number of Vertices
+		Star.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+	}
 
 	// === Load the Ground
+	{
+		// == Set the WorldMatrix
+		Ground.WorldMatrix = XMMatrixIdentity();
+		// == Set the Vertex Buffer
+		Vertex groundVerts[4];
+		float radius = 4.0f;
+		groundVerts[0] = Vertex(-radius, 0, radius, 1, 0, 0);
+		groundVerts[1] = Vertex(-radius, 0, -radius, 1, 0, 4);
+		groundVerts[2] = Vertex(radius, 0, radius, 1, 4, 0);
+		groundVerts[3] = Vertex(radius, 0, -radius, 1, 4, 4);
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(groundVerts);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
 
+		initData.pSysMem = groundVerts;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &Ground.pVertexBuffer);
+		// == Set the Index Buffer
+		unsigned int indexes[] = { 0, 3, 1, 0, 2, 3 };
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(indexes);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+		initData.pSysMem = indexes;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &Ground.pIndexBuffer);
+		// == Set the Shaders
+		Ground.pVertexShader = pModel_VS;
+		Ground.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"SMGrass_Seamless.dds", NULL, &Ground.pShaderResourceView);
+		// == Set the Sampler State
+		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.MinLOD = -FLT_MAX;
+		samplerDesc.MaxLOD = FLT_MAX;
+		samplerDesc.MipLODBias = 0.0f;
+		samplerDesc.MaxAnisotropy = 1;
+		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+		pDevice->CreateSamplerState(&samplerDesc, &Ground.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Ground.pInputLayout);
+		// == Set the VertexSize
+		Ground.VertexSize = sizeof(Vertex);
+		// == Set the Number of Vertices
+		Ground.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+	}
+
+	// === Load the Bamboo
+	{
+		// == Set the WorldMatrix
+		Bamboo.WorldMatrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0.2, 3, 1);
+		// == Load the Obj File, Set up Vertex and Index Buffers
+		LoadObjectModel("SingleBamboo.obj", Bamboo);
+		// == Set the Shaders
+		Bamboo.pVertexShader = pModel_VS;
+		Bamboo.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"BambooT.dds", NULL, &Bamboo.pShaderResourceView);
+		// == Set the Sampler State
+		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.MinLOD = -FLT_MAX;
+		samplerDesc.MaxLOD = FLT_MAX;
+		samplerDesc.MipLODBias = 0.0f;
+		samplerDesc.MaxAnisotropy = 1;
+		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+		pDevice->CreateSamplerState(&samplerDesc, &Bamboo.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Bamboo.pInputLayout);
+	}
 }
 
 void ApplicationWindow::DrawObject(Object* _object)
@@ -452,6 +738,10 @@ void ApplicationWindow::DrawObject(Object* _object)
 	// === Set the Layout
 	pDeviceContext->IASetInputLayout(_object->pInputLayout);
 
+	// === Is there a Texture to take into account?
+	pDeviceContext->PSSetShaderResources(0, 1, &_object->pShaderResourceView);
+	pDeviceContext->PSSetSamplers(0, 1, &_object->pSamplerState);
+
 	// === Draw 
 	pDeviceContext->DrawIndexed(_object->NumIndexes, 0, 0);
 }
@@ -460,7 +750,10 @@ void ApplicationWindow::DrawScene()
 {
 	// === Draw the Objects
 	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	pDeviceContext->RSSetState(pRS_CullBack);
+	DrawObject(&Ground);
 	DrawObject(&Star);
+	DrawObject(&Bamboo);
 }
 
 void ApplicationWindow::UpdateSceneBuffer()

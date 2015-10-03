@@ -19,7 +19,9 @@ public:
 	ID3D11InputLayout* pInputLayout;
 	ID3D11VertexShader* pVertexShader;
 	ID3D11PixelShader* pPixelShader;
-	ID3D11Texture2D* pTexture;
+	ID3D11Resource* pTexture;
+	ID3D11ShaderResourceView* pShaderResourceView;
+	ID3D11SamplerState*	pSamplerState;
 	unsigned int VertexSize;
 	unsigned int NumIndexes;
 };

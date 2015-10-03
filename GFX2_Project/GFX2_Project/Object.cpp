@@ -21,8 +21,11 @@ Object::~Object()
 	SAFE_RELEASE(pVertexBuffer);
 	SAFE_RELEASE(pIndexBuffer);
 	SAFE_RELEASE(pInputLayout);
-	SAFE_RELEASE(pVertexShader);
-	SAFE_RELEASE(pPixelShader);
 	SAFE_RELEASE(pTexture);
+	SAFE_RELEASE(pShaderResourceView);
+	SAFE_RELEASE(pSamplerState);
+	/* No need to release the shaders, as the main application will handle that */
+	// SAFE_RELEASE(pVertexShader);
+	// SAFE_RELEASE(pPixelShader);
 }
 // ==================================== //

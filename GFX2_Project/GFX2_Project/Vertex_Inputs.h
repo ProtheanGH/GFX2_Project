@@ -28,15 +28,27 @@ struct Vertex_PositionColor
 struct Vertex
 {
 	float x, y, z, w;
-	float u, v;
+	float u, v, n;
+	float normals[3];
 
 	Vertex() {
 		x = y = z = 0; w = 1;
 		u = z = 0;
 	}
-	Vertex(float _x, float _y, float _z, float _w = 1, float _u = 0, float _v = 0) {
+	Vertex(float _x, float _y, float _z, float _w = 1, float _u = 0, float _v = 0, float _n = 0) {
 		x = _x; y = _y; z = _z; w = _w;
-		u = _u; v = _v;
+		u = _u; v = _v; n = _n;
+		normals[0] = 0; normals[1] = 0; normals[2] = 0;
+	}
+	Vertex(float _x, float _y, float _z, float _w, float _u, float _v, float _n, float* _normals) {
+		x = _x; y = _y; z = _z; w = _w;
+		u = _u; v = _v; n = _n;
+		normals[0] = _normals[0]; normals[1] = _normals[1]; normals[2] = _normals[2];
+	}
+	Vertex(float _x, float _y, float _z, float _w, float _u, float _v, float _n, float _nx, float _ny, float _nz) {
+		x = _x; y = _y; z = _z; w = _w;
+		u = _u; v = _v; n = _n;
+		normals[0] = _nx; normals[1] = _ny; normals[2] = _nz;
 	}
 };
 // ============================= //
@@ -51,6 +63,7 @@ D3D11_INPUT_ELEMENT_DESC Layout_Vertex_PositionColor[] =
 D3D11_INPUT_ELEMENT_DESC Layout_Vertex[] =
 {
 	{ "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	{ "TEXCOORDS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+	{ "TEXTCOORDS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+	{ "NORMALS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
 };
 // ========================= //
