@@ -5,6 +5,7 @@
 
 #include "Camera.h"
 #include "DDSTextureLoader.h"
+#include "Light.h"
 #include "Object.h"
 #include "ObjLoader.h"
 #include "Vertex_Inputs.h"
@@ -64,6 +65,7 @@ class ApplicationWindow
 	// === Constant Buffers
 	ID3D11Buffer*					pObjectConstantBuffer;
 	ID3D11Buffer*					pSceneConstantBuffer;
+	ID3D11Buffer*					pLightConstantBuffer;
 	// === Shaders
 	ID3D11VertexShader*				pModel_VS;
 	ID3D11PixelShader*				pModel_PS;
@@ -78,6 +80,8 @@ class ApplicationWindow
 	Object							Ground;
 	Object							Bamboo;
 	Object							Skybox;
+	// === Lights
+	DirectionalLight				Light_Directional;
 	// === Variables
 	Camera							m_Camera;
 	XMFLOAT4X4						ProjectionMatrix;
@@ -112,14 +116,16 @@ private:
 	void InitializeConstantBuffers();
 	void InitializeSamplerState();
 	// ===== Priavte Interface
+	void CreateLights();
 	void CreateProjectionMatrix();
 	void CreateSkybox();
 	void DrawSkybox();
-	void LoadObjectModel(const char* _path, Object& _object);
-	void LoadObjects();
 	void DrawObject(Object* _object);
 	void DrawScene();
+	void LoadObjectModel(const char* _path, Object& _object);
+	void LoadObjects();
 	void UpdateSceneBuffer();
+	void UpdateLighting();
 };
 
 // === Global Tracker of the Application
@@ -176,6 +182,7 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	// ===
 
 	// === Other Initializations
+	CreateLights();
 	CreateSkybox();
 	LoadObjects();
 	// ===
@@ -201,6 +208,7 @@ bool ApplicationWindow::ShutDown()
 	SAFE_RELEASE(pRS_CullFront);
 	SAFE_RELEASE(pObjectConstantBuffer);
 	SAFE_RELEASE(pSceneConstantBuffer);
+	SAFE_RELEASE(pLightConstantBuffer);
 	SAFE_RELEASE(pModel_PS);
 	SAFE_RELEASE(pModel_VS);
 	SAFE_RELEASE(pSkybox_PS);
@@ -242,8 +250,10 @@ bool ApplicationWindow::Run()
 void ApplicationWindow::ResizeWindow(int _width, int _height)
 {
 	if (pSwapChain) {
+
 		width = _width;
 		height = _height;
+
 
 		pDeviceContext->OMSetRenderTargets(0, 0, 0);
 
@@ -262,6 +272,12 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 		result = pDevice->CreateRenderTargetView(pBuffer, NULL, &pRenderTargetView);
 
 		pBuffer->Release();
+
+		DXGI_SWAP_CHAIN_DESC desc;
+		pSwapChain->GetDesc(&desc);
+
+		//width = desc.BufferDesc.Width;
+		//height = desc.BufferDesc.Height;
 
 		pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
 
@@ -299,7 +315,7 @@ void ApplicationWindow::InitializeDeviceAndSwapChain()
 	swapDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swapDesc.OutputWindow = window;
 	swapDesc.Windowed = true;
-	swapDesc.SampleDesc.Count = 2;
+	swapDesc.SampleDesc.Count = 1;
 	swapDesc.Flags = NULL;
 	// === Feature Level 
 	D3D_FEATURE_LEVEL featureLevel;
@@ -320,7 +336,7 @@ void ApplicationWindow::SetupViewport()
 	DXGI_SWAP_CHAIN_DESC swapDesc;
 	ZeroMemory(&swapDesc, sizeof(swapDesc));
 	pSwapChain->GetDesc(&swapDesc);
-	viewPort.Height = width;
+	viewPort.Height = height;
 	viewPort.Width = width;
 	viewPort.MinDepth = 0;
 	viewPort.MaxDepth = 1;
@@ -339,7 +355,7 @@ void ApplicationWindow::InitializeDepthView()
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
-	depthDesc.SampleDesc.Count = 2;
+	depthDesc.SampleDesc.Count = 1;
 	depthDesc.SampleDesc.Quality = 0;
 	depthDesc.Usage = D3D11_USAGE_DEFAULT;
 	depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
@@ -380,14 +396,14 @@ void ApplicationWindow::InitializeRasterizerStates()
 {
 	D3D11_RASTERIZER_DESC rasterDesc;
 	ZeroMemory(&rasterDesc, sizeof(rasterDesc));
-	rasterDesc.AntialiasedLineEnable = true;
+	rasterDesc.AntialiasedLineEnable = false; // true;
 	rasterDesc.CullMode = D3D11_CULL_BACK;
 	rasterDesc.DepthBias = 0;
 	rasterDesc.DepthBiasClamp = 0.0f;
 	rasterDesc.DepthClipEnable = true;
 	rasterDesc.FillMode = D3D11_FILL_SOLID;
 	rasterDesc.FrontCounterClockwise = false;
-	rasterDesc.MultisampleEnable = true;
+	rasterDesc.MultisampleEnable = false; // true;
 	rasterDesc.ScissorEnable = false;
 	rasterDesc.SlopeScaledDepthBias = 0.0f;
 
@@ -435,15 +451,31 @@ void ApplicationWindow::InitializeConstantBuffers()
 	bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
 
 	pDevice->CreateBuffer(&bufferDesc, NULL, &pSceneConstantBuffer);
+
+	// == Light Buffer
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bufferDesc.ByteWidth = sizeof(DirectionalLight);
+	bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_FLAG::D3D11_CPU_ACCESS_WRITE;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
+
+	pDevice->CreateBuffer(&bufferDesc, NULL, &pLightConstantBuffer);
 }
 // ========================================== //
 
 // ===== Private Interface ===== //
+void ApplicationWindow::CreateLights()
+{
+	Light_Directional.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1);
+	Light_Directional.LightDirection = XMFLOAT4(1, -1, 0, 0);
+}
+
 void ApplicationWindow::CreateProjectionMatrix()
 {
 	float nearPlane = 0.1, farPlane = 100;
-	float VertFOV = XMConvertToRadians(65), AspectRatio = width / height;
-	float yScale = (1 / tan(VertFOV * 0.5)), xScale = yScale * AspectRatio;
+	float VertFOV = XMConvertToRadians(65), AspectRatio = (float)width / (float)height;
+	float yScale = (1 / tan(VertFOV * 0.5)), xScale = yScale / AspectRatio;
 	ProjectionMatrix = XMFLOAT4X4(xScale, 0, 0, 0,
 		0, yScale, 0, 0,
 		0, 0, farPlane / (farPlane - nearPlane), 1,
@@ -683,10 +715,10 @@ void ApplicationWindow::LoadObjects()
 		// == Set the Vertex Buffer
 		Vertex groundVerts[4];
 		float radius = 4.0f;
-		groundVerts[0] = Vertex(-radius, 0, radius, 1, 0, 0);
-		groundVerts[1] = Vertex(-radius, 0, -radius, 1, 0, 4);
-		groundVerts[2] = Vertex(radius, 0, radius, 1, 4, 0);
-		groundVerts[3] = Vertex(radius, 0, -radius, 1, 4, 4);
+		groundVerts[0] = Vertex(-radius, 0, radius, 1, 0, 0, 0, 0, 1, 0);
+		groundVerts[1] = Vertex(-radius, 0, -radius, 1, 0, 4, 0, 0, 1, 0);
+		groundVerts[2] = Vertex(radius, 0, radius, 1, 4, 0, 0, 0, 1, 0);
+		groundVerts[3] = Vertex(radius, 0, -radius, 1, 4, 4, 0, 0, 1, 0);
 		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bufferDesc.ByteWidth = sizeof(groundVerts);
@@ -801,6 +833,8 @@ void ApplicationWindow::DrawObject(Object* _object)
 
 void ApplicationWindow::DrawScene()
 {
+	// === Update the Lighting
+	UpdateLighting();
 	// === Draw the Objects
 	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pDeviceContext->RSSetState(pRS_CullBack);
@@ -819,6 +853,16 @@ void ApplicationWindow::UpdateSceneBuffer()
 	pDeviceContext->Unmap(pSceneConstantBuffer, 0);
 
 	pDeviceContext->VSSetConstantBuffers(1, 1, &pSceneConstantBuffer);
+}
+
+void ApplicationWindow::UpdateLighting()
+{
+	D3D11_MAPPED_SUBRESOURCE sceneSubResource;
+	pDeviceContext->Map(pLightConstantBuffer, 0, D3D11_MAP::D3D11_MAP_WRITE_DISCARD, NULL, &sceneSubResource);
+	memcpy(sceneSubResource.pData, &Light_Directional, sizeof(Light_Directional));
+	pDeviceContext->Unmap(pLightConstantBuffer, 0);
+
+	pDeviceContext->PSSetConstantBuffers(0, 1, &pLightConstantBuffer);
 }
 // ============================= //
 

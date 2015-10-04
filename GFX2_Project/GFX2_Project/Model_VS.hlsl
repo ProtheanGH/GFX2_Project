@@ -11,6 +11,7 @@ struct V_OUTPUT
 {
 	float4 posH : SV_POSITION;
 	float2 UVCoords : TEXCOORD0;
+	float3 normal : NORMAL;
 };
 
 cbuffer OBJECT : register (b0)
@@ -28,16 +29,22 @@ V_OUTPUT main(V_INPUT _input)
 {
 	V_OUTPUT output = (V_OUTPUT)0;
 
+	// === Position
 	float4 localH = float4(_input.posL);
-	// === Local -> World
+	// == Local -> World
 	localH = mul(localH, worldMatrix);
-	// === World -> View
+	// == World -> View
 	localH = mul(localH, viewMatrix);
-	// === View -> Projection
+	// == View -> Projection
 	localH = mul(localH, projectionMatrix);
+
+	// === Normals
+	float4 normal = float4(_input.normalsL, 0);
+	normal = mul(normal, worldMatrix);
 
 	output.posH = localH;
 	output.UVCoords = float2(_input.uvL[0], _input.uvL[1]);
+	output.normal = normal;
 
 	return output;
 }

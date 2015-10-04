@@ -5,7 +5,11 @@
 // ===== Constructor / Destructor ===== //
 Camera::Camera()
 {
-	XMStoreFloat4x4(&ViewMatrix, XMMatrixIdentity());
+	ViewMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, -2, 1);
+	XMMATRIX matrix = Float4x4ToXMMAtrix(ViewMatrix);
+	XMVECTOR determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
+	XMStoreFloat4x4(&ViewMatrix, matrix);
 	CursorPosition.x = -1;
 	m_fMovementSpeed = 1;
 	m_fRotationSpeed = 1;
@@ -77,7 +81,7 @@ void Camera::HandleInput(float _deltaTime)
 
 	// Quick Reset
 	if (GetAsyncKeyState(VK_SPACE)) {
-		matrix = XMMatrixIdentity();
+		matrix = XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, -2, 1);
 	}
 
 	// === Update the View Matrix
