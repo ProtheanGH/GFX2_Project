@@ -88,8 +88,11 @@ void SpotLight::HandleInput()
 		// == Right
 
 	}
-	// === Direction
 
+	// === Direction
+	if (GetAsyncKeyState(VK_NUMLOCK)) {
+
+	}
 	// === Intensity
 
 }
