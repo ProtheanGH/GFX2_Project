@@ -10,6 +10,7 @@ struct V_INPUT
 struct V_OUTPUT
 {
 	float4 posH : SV_POSITION;
+	float4 surfacePos : SURFACEPOS;
 	float2 UVCoords : TEXCOORD0;
 	float3 normal : NORMAL;
 };
@@ -43,6 +44,7 @@ V_OUTPUT main(V_INPUT _input)
 	normal = mul(normal, worldMatrix);
 
 	output.posH = localH;
+	output.surfacePos = _input.posL;
 	output.UVCoords = float2(_input.uvL[0], _input.uvL[1]);
 	output.normal = normal;
 

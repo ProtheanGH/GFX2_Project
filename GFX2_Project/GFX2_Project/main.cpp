@@ -81,11 +81,16 @@ class ApplicationWindow
 	Object							Bamboo;
 	Object							Skybox;
 	// === Lights
-	DirectionalLight				Light_Directional;
+	Lights							mLights;
+	DirectionalLight				mDirectionalLight;
+	PointLight						mPointLight;
+	SpotLight						mSpotLight;
+	AmbientLight					mAmbientLight;
 	// === Variables
 	Camera							m_Camera;
 	XMFLOAT4X4						ProjectionMatrix;
 	XTime							Time;
+	bool							KeyBuffer;
 	// === Colors
 	float RED[4];
 	float GREEN[4];
@@ -455,7 +460,7 @@ void ApplicationWindow::InitializeConstantBuffers()
 	// == Light Buffer
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bufferDesc.ByteWidth = sizeof(DirectionalLight);
+	bufferDesc.ByteWidth = sizeof(Lights);
 	bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_FLAG::D3D11_CPU_ACCESS_WRITE;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
@@ -467,8 +472,27 @@ void ApplicationWindow::InitializeConstantBuffers()
 // ===== Private Interface ===== //
 void ApplicationWindow::CreateLights()
 {
-	Light_Directional.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1);
-	Light_Directional.LightDirection = XMFLOAT4(1, -1, 0, 0);
+	// === Ambient Light
+	mAmbientLight.LightColor = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
+	// === Directional Light
+	mDirectionalLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
+	mDirectionalLight.LightDirection = XMFLOAT4(1, -1, 0, 0);
+	// === Point Light
+	mPointLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
+	mPointLight.Position = XMFLOAT4(3, 1, 3, 1);
+	mPointLight.Radius = 2.0f;
+	// === SpotLight
+	mSpotLight.ConeDirection = XMFLOAT4(0, -1, 0, 0);
+	mSpotLight.ConeRatio = 0.5f;
+	mSpotLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
+	mSpotLight.Position = XMFLOAT4(0, 1, 0, 1);
+	mSpotLight.Radius = 1.0f;
+
+	// === Lights Container
+	mLights.mAmbientLight = mAmbientLight;
+	mLights.mDirectionalLight = mDirectionalLight;
+	mLights.mPointLight = mPointLight;
+	mLights.mSpotLight = mSpotLight;
 }
 
 void ApplicationWindow::CreateProjectionMatrix()
@@ -773,7 +797,7 @@ void ApplicationWindow::LoadObjects()
 	// === Load the Bamboo
 	{
 		// == Set the WorldMatrix
-		Bamboo.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0.2, 3, 1);
+		Bamboo.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 0.2, 3, 1);
 		// == Load the Obj File, Set up Vertex and Index Buffers
 		LoadObjectModel("SingleBamboo.obj", Bamboo);
 		// == Set the Shaders
@@ -857,9 +881,30 @@ void ApplicationWindow::UpdateSceneBuffer()
 
 void ApplicationWindow::UpdateLighting()
 {
+	// === Check for Input
+	if (GetAsyncKeyState('1') && !KeyBuffer) {
+		// == Directional Light
+		KeyBuffer = true;
+		mLights.mDirectionalLight.LightColor.z == 0 ? mLights.mDirectionalLight = mDirectionalLight : mLights.mDirectionalLight = DirectionalLight();
+	}
+	else if (GetAsyncKeyState('2') && !KeyBuffer) {
+		// == Point Light
+		KeyBuffer = true;
+		mLights.mPointLight.LightColor.z == 0 ? mLights.mPointLight = mPointLight : mLights.mPointLight = PointLight();
+	}
+	else if (GetAsyncKeyState('3') && !KeyBuffer) {
+		// == Spot Light
+		KeyBuffer = true;
+		mLights.mSpotLight.LightColor.z == 0 ? mLights.mSpotLight = mSpotLight : mLights.mSpotLight = SpotLight();
+	}
+	if (!GetAsyncKeyState('1') && !GetAsyncKeyState('2') && !GetAsyncKeyState('3') && KeyBuffer) {
+		KeyBuffer = false;
+	}
+
+	// === Update the Constant Buffer
 	D3D11_MAPPED_SUBRESOURCE sceneSubResource;
 	pDeviceContext->Map(pLightConstantBuffer, 0, D3D11_MAP::D3D11_MAP_WRITE_DISCARD, NULL, &sceneSubResource);
-	memcpy(sceneSubResource.pData, &Light_Directional, sizeof(Light_Directional));
+	memcpy(sceneSubResource.pData, &mLights, sizeof(Lights));
 	pDeviceContext->Unmap(pLightConstantBuffer, 0);
 
 	pDeviceContext->PSSetConstantBuffers(0, 1, &pLightConstantBuffer);
