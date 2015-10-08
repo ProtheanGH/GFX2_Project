@@ -483,9 +483,9 @@ void ApplicationWindow::CreateLights()
 	mPointLight.Radius = 2.0f;
 	// === SpotLight
 	mSpotLight.ConeDirection = XMFLOAT4(0, -1, 0, 0);
-	mSpotLight.ConeRatio = 0.5f;
+	mSpotLight.ConeRatio = 0.9f;
 	mSpotLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
-	mSpotLight.Position = XMFLOAT4(0, 1, 0, 1);
+	mSpotLight.Position = XMFLOAT4(0, 3, 0, 1);
 	mSpotLight.Radius = 1.0f;
 
 	// === Lights Container
@@ -630,8 +630,8 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	LoadObjFile(_path, positions, uvs, normals);
 	// === Cycle through the data, setting up the actaul object
 	Vertex vert;
-	Vertex objectVertices[444]; // = new Vertex[positions.size()];
-	unsigned int objectIndexes[444]; // = new unsigned int[positions.size()];
+	Vertex* objectVertices = new Vertex[positions.size()];
+	unsigned int* objectIndexes = new unsigned int[positions.size()];
 	for (unsigned int i = 0; i < positions.size(); i++) {
 		objectVertices[i] = Vertex(positions[i].x, positions[i].y, positions[i].z, 1, uvs[i].x, uvs[i].y, uvs[i].z, normals[i].x, normals[i].y, normals[i].z);
 		objectIndexes[i] = i;
@@ -642,13 +642,12 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	D3D11_SUBRESOURCE_DATA initData;
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bufferDesc.ByteWidth = sizeof(objectVertices);
+	bufferDesc.ByteWidth = sizeof(Vertex) * positions.size();
 	bufferDesc.CPUAccessFlags = NULL;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
 
-//	memcpy(&initData.pSysMem, objectVertices, sizeof(objectVertices) / sizeof(Vertex));
-	initData.pSysMem = &objectVertices;
+	initData.pSysMem = objectVertices;
 	initData.SysMemPitch = 0;
 	initData.SysMemSlicePitch = 0;
 
@@ -656,12 +655,12 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	// == Index Buffer
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bufferDesc.ByteWidth = sizeof(objectIndexes);
+	bufferDesc.ByteWidth = sizeof(unsigned int) * positions.size();
 	bufferDesc.CPUAccessFlags = NULL;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-//	memcpy(&initData.pSysMem, &objectIndexes, sizeof(objectIndexes) / sizeof(unsigned int));
+//	memcpy(&initData.pSysMem, &objectIndexes, sizeof(unsigned int) * positions.size());
 	initData.pSysMem = objectIndexes;
 	initData.SysMemPitch = 0;
 	initData.SysMemSlicePitch = 0;
@@ -670,7 +669,7 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	// == Set the VertexSize
 	_object.VertexSize = sizeof(Vertex);
 	// == Set the Number of Vertices
-	_object.NumIndexes = sizeof(objectIndexes) / sizeof(unsigned int);
+	_object.NumIndexes = positions.size();
 }
 
 void ApplicationWindow::LoadObjects()
@@ -881,7 +880,7 @@ void ApplicationWindow::UpdateSceneBuffer()
 
 void ApplicationWindow::UpdateLighting()
 {
-	// === Check for Input
+	// === Activate / Deactivate Lights
 	if (GetAsyncKeyState('1') && !KeyBuffer) {
 		// == Directional Light
 		KeyBuffer = true;
@@ -900,6 +899,9 @@ void ApplicationWindow::UpdateLighting()
 	if (!GetAsyncKeyState('1') && !GetAsyncKeyState('2') && !GetAsyncKeyState('3') && KeyBuffer) {
 		KeyBuffer = false;
 	}
+
+	// === Light Input
+	mLights.mSpotLight.HandleInput(Time.Delta());
 
 	// === Update the Constant Buffer
 	D3D11_MAPPED_SUBRESOURCE sceneSubResource;

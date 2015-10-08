@@ -44,7 +44,7 @@ V_OUTPUT main(V_INPUT _input)
 	normal = mul(normal, worldMatrix);
 
 	output.posH = localH;
-	output.surfacePos = _input.posL;
+	output.surfacePos = mul(_input.posL, worldMatrix);
 	output.UVCoords = float2(_input.uvL[0], _input.uvL[1]);
 	output.normal = normal;
 

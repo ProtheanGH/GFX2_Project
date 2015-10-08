@@ -48,7 +48,7 @@ struct SpotLight
 		Padding = XMFLOAT2(0, 0);
 	}
 
-	void HandleInput();
+	void HandleInput(float _deltaTime);
 };
 
 // (16 Bytes )
@@ -70,28 +70,32 @@ struct Lights
 
 // ===== Functions ===== //
 // === Spot Light
-void SpotLight::HandleInput()
+void SpotLight::HandleInput(float _deltaTime)
 {
 	// === Movement
 	if (GetAsyncKeyState(VK_NUMPAD8)) {
 		// == Forward
-
+		Position.z += _deltaTime;
 	}
 	if (GetAsyncKeyState(VK_NUMPAD2)) {
 		// == Backward
+		Position.z -= _deltaTime;
 	}
 	if (GetAsyncKeyState(VK_NUMPAD4)) {
 		// == Left
-
+		Position.x -= _deltaTime;
 	}
 	if (GetAsyncKeyState(VK_NUMPAD6)) {
 		// == Right
-
+		Position.x += _deltaTime;
 	}
 
 	// === Direction
-	if (GetAsyncKeyState(VK_NUMLOCK)) {
-
+	if (GetAsyncKeyState(VK_ADD)) {
+		ConeDirection.z += _deltaTime;
+	}
+	else if (GetAsyncKeyState(VK_SUBTRACT)) {
+		ConeDirection.z -= _deltaTime;
 	}
 	// === Intensity
 

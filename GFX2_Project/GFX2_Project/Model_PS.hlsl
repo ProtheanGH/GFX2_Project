@@ -57,7 +57,7 @@ float4 main(P_INPUT _input) : SV_TARGET
 	float4 color = baseTexture.Sample(filter, _input.UVCoords);
 	// === Handle Lighting
 	float lightRatio;
-	float4 lightDir;
+	float3 lightDir;
 	float attenuation;
 	// == Ambient Lighting
 	float4 ambientColor = color;
@@ -83,8 +83,9 @@ float4 main(P_INPUT _input) : SV_TARGET
 
 	// == SpotLight
 	float4 spotColor = color;
-	lightDir = normalize(Light_Spot.Position - _input.surfacePos);
-	float surfaceRatio = clamp(dot(-lightDir, Light_Spot.ConeDirection), 0, 1);
+	float3 coneDir = normalize(Light_Spot.ConeDirection.xyz);
+	lightDir = normalize(Light_Spot.Position.xyz - _input.surfacePos.xyz);
+	float surfaceRatio = clamp(dot(-lightDir.xyz, coneDir.xyz), 0, 1);
 	float spotFactor = (surfaceRatio > Light_Spot.ConeRatio) ? 1 : 0;
 	lightRatio = clamp(dot(lightDir, _input.normal), 0, 1);
 	spotColor[0] *= spotFactor * lightRatio * Light_Spot.LightColor[0];
