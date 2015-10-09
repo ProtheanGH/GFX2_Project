@@ -75,11 +75,16 @@ class ApplicationWindow
 	ID3D11PixelShader*				pVertexColor_PS;
 	SEND_TO_VRAM_SCENE				toShaderScene;
 	SEND_TO_VRAM_OBJECT				toShaderObject;
+	// === Render Texture
+	ID3D11RenderTargetView*			pRenderTextureTargetView;
+	ID3D11Texture2D*				pRenderTexture;
 	// === Scene Objects
 	Object							Star;
 	Object							Ground;
 	Object							Bamboo;
 	Object							Skybox;
+	Object							Barrel;
+	Object							RTObject;
 	// === Lights
 	Lights							mLights;
 	DirectionalLight				mDirectionalLight;
@@ -88,7 +93,9 @@ class ApplicationWindow
 	AmbientLight					mAmbientLight;
 	// === Variables
 	Camera							m_Camera;
+	Camera							m_SecondaryCamera;
 	XMFLOAT4X4						ProjectionMatrix;
+	XMFLOAT4X4						SecondaryProjectionMatrix;
 	XTime							Time;
 	bool							KeyBuffer;
 	// === Colors
@@ -120,6 +127,7 @@ private:
 	void InitializeShaders();
 	void InitializeConstantBuffers();
 	void InitializeSamplerState();
+	void InitializeRenderTexture();
 	// ===== Priavte Interface
 	void CreateLights();
 	void CreateProjectionMatrix();
@@ -129,7 +137,7 @@ private:
 	void DrawScene();
 	void LoadObjectModel(const char* _path, Object& _object);
 	void LoadObjects();
-	void UpdateSceneBuffer();
+	void UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix);
 	void UpdateLighting();
 };
 
@@ -184,6 +192,7 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	InitializeRasterizerStates();
 	InitializeShaders();
 	InitializeConstantBuffers();
+	InitializeRenderTexture();
 	// ===
 
 	// === Other Initializations
@@ -194,6 +203,13 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 
 	// === Create the Projection Matrix
 	CreateProjectionMatrix();
+	SecondaryProjectionMatrix = ProjectionMatrix;
+	// ===
+
+	// === Setup the Secondary Camera
+	XMFLOAT4X4 secondaryView = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1);
+	XMStoreFloat4x4(&secondaryView, XMMatrixMultiply(XMMatrixRotationY(XMConvertToRadians(180)), Float4x4ToXMMAtrix(secondaryView)));
+	m_SecondaryCamera.SetViewMatrix(secondaryView);
 	// ===
 }
 // ======================= //
@@ -220,6 +236,8 @@ bool ApplicationWindow::ShutDown()
 	SAFE_RELEASE(pSkybox_VS);
 	SAFE_RELEASE(pVertexColor_PS);
 	SAFE_RELEASE(pVertexColor_VS);
+	SAFE_RELEASE(pRenderTextureTargetView);
+	SAFE_RELEASE(pRenderTexture);
 
 	UnregisterClass(L"DirectXApplication", application);
 	return true;
@@ -234,15 +252,26 @@ bool ApplicationWindow::Run()
 
 	// === Update Camera
 	m_Camera.HandleInput(Time.Delta());
-	
-	// === Set D3D11
+
+	// === Render to Texture
+	pDeviceContext->OMSetRenderTargets(1, &pRenderTextureTargetView, pDepthView);
+	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
+	pDeviceContext->ClearRenderTargetView(pRenderTextureTargetView, RED);
+	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
+
+	UpdateSceneBuffer(m_SecondaryCamera, SecondaryProjectionMatrix);
+
+	DrawSkybox();
+
+	DrawScene();
+
+	// === Normal Render
 	pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, pDepthView);
 	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
-//	pDeviceContext->RSSetViewports(1, &viewPort);
 	pDeviceContext->ClearRenderTargetView(pRenderTargetView, BLUE);
 	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
 
-	UpdateSceneBuffer();
+	UpdateSceneBuffer(m_Camera, ProjectionMatrix);
 
 	DrawSkybox();
 
@@ -466,6 +495,27 @@ void ApplicationWindow::InitializeConstantBuffers()
 	bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
 
 	pDevice->CreateBuffer(&bufferDesc, NULL, &pLightConstantBuffer);
+}
+
+void ApplicationWindow::InitializeRenderTexture()
+{
+	D3D11_TEXTURE2D_DESC desc;
+	ZeroMemory(&desc, sizeof(desc));
+	desc.Width = width;
+	desc.Height = height;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	desc.CPUAccessFlags = 0;
+	desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+	pDevice->CreateTexture2D(&desc, NULL, &pRenderTexture);
+
+	pDevice->CreateRenderTargetView(pRenderTexture, NULL, &pRenderTextureTargetView);
 }
 // ========================================== //
 
@@ -819,6 +869,76 @@ void ApplicationWindow::LoadObjects()
 		// == Set the InputLayout
 		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Bamboo.pInputLayout);
 	}
+
+	// === Load the Barrel
+	{
+		// == Set the WorldMatrix
+		XMStoreFloat4x4(&Barrel.WorldMatrix, XMMatrixMultiply(XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 2, 1), XMMatrixScaling(0.5f, 0.5f, 0.5f)));
+		// == Load the Obj File, Set up Vertex and Index Buffers
+		LoadObjectModel("Barrel.obj", Barrel);
+		// == Set the Shaders
+		Barrel.pVertexShader = pModel_VS;
+		Barrel.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"barrel_diffuse.dds", NULL, &Barrel.pShaderResourceView);
+		// == Set the Sampler State
+		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.MinLOD = -FLT_MAX;
+		samplerDesc.MaxLOD = FLT_MAX;
+		samplerDesc.MipLODBias = 0.0f;
+		samplerDesc.MaxAnisotropy = 1;
+		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+		pDevice->CreateSamplerState(&samplerDesc, &Barrel.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Barrel.pInputLayout);
+	}
+
+	// === Load the RTObject
+	{
+		// == Set the WorldMatrix
+		RTObject.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 3, 1);
+		// == Setup the Verts Buffer
+		Vertex verts[4];
+		verts[0] = Vertex(-0.5f, -1, 0, 1, 0, 1, 0, 0, 0, -1);
+		verts[1] = Vertex(-0.5f, 1, 0, 1, 0, 0, 0, 0, 0, -1);
+		verts[2] = Vertex(0.5f, 1, 0, 1, 1, 0, 0, 0, 0, -1);
+		verts[3] = Vertex(0.5f, -1, 0, 1, 1, 1, 0, 0, 0, -1);
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(verts);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+
+		initData.pSysMem = verts;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &RTObject.pVertexBuffer);
+		// == Setup the Index Buffer
+		unsigned int indexes[] = { 0, 1, 3, 1, 2, 3 };
+		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+		bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		bufferDesc.ByteWidth = sizeof(indexes);
+		bufferDesc.CPUAccessFlags = NULL;
+		bufferDesc.MiscFlags = 0;
+		bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+		initData.pSysMem = indexes;
+		initData.SysMemPitch = 0;
+		initData.SysMemSlicePitch = 0;
+
+		pDevice->CreateBuffer(&bufferDesc, &initData, &RTObject.pIndexBuffer);
+		// == Set the Shaders
+		RTObject.pVertexShader = pModel_VS;
+		RTObject.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		
+	}
 }
 
 void ApplicationWindow::DrawObject(Object* _object)
@@ -864,11 +984,13 @@ void ApplicationWindow::DrawScene()
 	DrawObject(&Ground);
 	DrawObject(&Star);
 	DrawObject(&Bamboo);
+	DrawObject(&Barrel);
 }
 
-void ApplicationWindow::UpdateSceneBuffer()
+void ApplicationWindow::UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix)
 {
-	toShaderScene.viewMatrix = m_Camera.GetViewMatrix();
+	toShaderScene.viewMatrix = _camera.GetViewMatrix();
+	toShaderScene.projectionMatrix = _projMatrix;
 
 	D3D11_MAPPED_SUBRESOURCE sceneSubResource;
 	pDeviceContext->Map(pSceneConstantBuffer, 0, D3D11_MAP::D3D11_MAP_WRITE_DISCARD, NULL, &sceneSubResource);

@@ -22,6 +22,7 @@ public:
 	void HandleInput(float _deltaTime);
 
 	// ===== Accessors / Mutators
+	void SetViewMatrix(XMFLOAT4X4 _viewMatrix);
 	XMFLOAT4X4 GetViewMatrix();
 	XMMATRIX GetViewXMMatrix();
 	XMFLOAT3 GetPosition();

@@ -39,6 +39,7 @@ bool LoadObjFile(const char * _path, vector<Vector3>& _vertices, vector<Vector3>
 		else if (strcmp(header, "vt") == 0) {
 			Vector3 uv;
 			fscanf_s(file, "%f %f", &uv.x, &uv.y);
+			uv.y = 1 - uv.y;
 			tempUVs.push_back(uv);
 		}
 		else if (strcmp(header, "vn") == 0) {

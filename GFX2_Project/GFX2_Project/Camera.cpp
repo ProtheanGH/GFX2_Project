@@ -92,6 +92,14 @@ void Camera::HandleInput(float _deltaTime)
 // ===================== //
 
 // ===== Accessors / Mutators ===== //
+void Camera::SetViewMatrix(XMFLOAT4X4 _viewMatrix)
+{
+	XMMATRIX matrix = Float4x4ToXMMAtrix(_viewMatrix);
+	XMVECTOR determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
+	XMStoreFloat4x4(&ViewMatrix, matrix);
+}
+
 XMFLOAT4X4 Camera::GetViewMatrix()
 {
 	return ViewMatrix;
