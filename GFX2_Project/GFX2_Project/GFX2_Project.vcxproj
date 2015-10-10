@@ -171,6 +171,7 @@
     <ClCompile Include="Color.cpp" />
     <ClCompile Include="DDSTextureLoader.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MoveComponent.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="XTime.cpp" />
   </ItemGroup>
@@ -226,6 +227,7 @@
     <ClInclude Include="DDSTextureLoader.h" />
     <ClInclude Include="Light.h" />
     <ClInclude Include="Math.h" />
+    <ClInclude Include="MoveComponent.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="ObjLoader.h" />
     <ClInclude Include="Skybox_PS.h" />

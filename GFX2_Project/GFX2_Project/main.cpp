@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "DDSTextureLoader.h"
 #include "Light.h"
+#include "MoveComponent.h"
 #include "Object.h"
 #include "ObjLoader.h"
 #include "Vertex_Inputs.h"
@@ -85,6 +86,7 @@ class ApplicationWindow
 	Object							Skybox;
 	Object							Barrel;
 	Object							RTObject;
+	Object							PatrolPointLight;
 	// === Lights
 	Lights							mLights;
 	DirectionalLight				mDirectionalLight;
@@ -130,15 +132,17 @@ private:
 	void InitializeRenderTexture();
 	// ===== Priavte Interface
 	void CreateLights();
-	void CreateProjectionMatrix();
+	XMFLOAT4X4 CreateProjectionMatrix(float _fov, float _width, float _height);
 	void CreateSkybox();
-	void DrawSkybox();
+	void DrawSkybox(Camera _camera);
+	void DrawRTObject();
 	void DrawObject(Object* _object);
 	void DrawScene();
 	void LoadObjectModel(const char* _path, Object& _object);
 	void LoadObjects();
 	void UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix);
 	void UpdateLighting();
+	void UpdateObjects();
 };
 
 // === Global Tracker of the Application
@@ -202,12 +206,13 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	// ===
 
 	// === Create the Projection Matrix
-	CreateProjectionMatrix();
-	SecondaryProjectionMatrix = ProjectionMatrix;
+	ProjectionMatrix = CreateProjectionMatrix(65.0f, (float)width, (float)height);
+	toShaderScene.projectionMatrix = ProjectionMatrix;
+	SecondaryProjectionMatrix = CreateProjectionMatrix(65.0f, 512.0f, 1024.0f);
 	// ===
 
 	// === Setup the Secondary Camera
-	XMFLOAT4X4 secondaryView = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1);
+	XMFLOAT4X4 secondaryView = RTObject.WorldMatrix;
 	XMStoreFloat4x4(&secondaryView, XMMatrixMultiply(XMMatrixRotationY(XMConvertToRadians(180)), Float4x4ToXMMAtrix(secondaryView)));
 	m_SecondaryCamera.SetViewMatrix(secondaryView);
 	// ===
@@ -253,6 +258,9 @@ bool ApplicationWindow::Run()
 	// === Update Camera
 	m_Camera.HandleInput(Time.Delta());
 
+	// === Update the Lighting
+	UpdateLighting();
+
 	// === Render to Texture
 	pDeviceContext->OMSetRenderTargets(1, &pRenderTextureTargetView, pDepthView);
 	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
@@ -261,7 +269,7 @@ bool ApplicationWindow::Run()
 
 	UpdateSceneBuffer(m_SecondaryCamera, SecondaryProjectionMatrix);
 
-	DrawSkybox();
+	DrawSkybox(m_SecondaryCamera);
 
 	DrawScene();
 
@@ -273,9 +281,14 @@ bool ApplicationWindow::Run()
 
 	UpdateSceneBuffer(m_Camera, ProjectionMatrix);
 
-	DrawSkybox();
+	DrawSkybox(m_Camera);
 
 	DrawScene();
+
+	DrawObject(&RTObject);
+
+	// === Update all the Objects
+	UpdateObjects();
 
 	pSwapChain->Present(0, 0);
 	return true; 
@@ -319,7 +332,8 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 		SetupViewport();
 
 		// === Create the Projection Matrix
-		CreateProjectionMatrix();
+		ProjectionMatrix = CreateProjectionMatrix(65.0f, (float)_width, (float)_height);
+		toShaderScene.projectionMatrix = ProjectionMatrix;
 
 		// === Recreate the Depth Buffer
 		SAFE_RELEASE(pDepthStencil);
@@ -545,16 +559,15 @@ void ApplicationWindow::CreateLights()
 	mLights.mSpotLight = mSpotLight;
 }
 
-void ApplicationWindow::CreateProjectionMatrix()
+XMFLOAT4X4 ApplicationWindow::CreateProjectionMatrix(float _fov, float _width, float _height)
 {
 	float nearPlane = 0.1, farPlane = 100;
-	float VertFOV = XMConvertToRadians(65), AspectRatio = (float)width / (float)height;
+	float VertFOV = XMConvertToRadians(_fov), AspectRatio = _width / _height;
 	float yScale = (1 / tan(VertFOV * 0.5)), xScale = yScale / AspectRatio;
-	ProjectionMatrix = XMFLOAT4X4(xScale, 0, 0, 0,
+	return XMFLOAT4X4(xScale, 0, 0, 0,
 		0, yScale, 0, 0,
 		0, 0, farPlane / (farPlane - nearPlane), 1,
 		0, 0, (-(farPlane * nearPlane)) / (farPlane - nearPlane), 0);
-	toShaderScene.projectionMatrix = ProjectionMatrix;
 }
 
 void ApplicationWindow::CreateSkybox()
@@ -654,10 +667,10 @@ void ApplicationWindow::CreateSkybox()
 	pDevice->CreateSamplerState(&samplerDesc, &Skybox.pSamplerState);
 }
 
-void ApplicationWindow::DrawSkybox()
+void ApplicationWindow::DrawSkybox(Camera _camera)
 {
 	// === Move the Skybox to the Camera's position
-	XMFLOAT3 cameraPos = m_Camera.GetPosition();
+	XMFLOAT3 cameraPos = _camera.GetPosition();
 	Skybox.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, cameraPos.x, cameraPos.y, cameraPos.z, 1);
 
 	// === Draw the Skybox
@@ -727,6 +740,15 @@ void ApplicationWindow::LoadObjects()
 	D3D11_BUFFER_DESC bufferDesc;
 	D3D11_SUBRESOURCE_DATA initData;
 	D3D11_SAMPLER_DESC samplerDesc;
+	samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	samplerDesc.MinLOD = -FLT_MAX;
+	samplerDesc.MaxLOD = FLT_MAX;
+	samplerDesc.MipLODBias = 0.0f;
+	samplerDesc.MaxAnisotropy = 1;
+	samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
 	// === Load the Star Object
 	{
 		// == Set the WorldMatrix
@@ -824,16 +846,6 @@ void ApplicationWindow::LoadObjects()
 		// == Set the Texture and ShaderResourceView
 		CreateDDSTextureFromFile(pDevice, L"SMGrass_Seamless.dds", NULL, &Ground.pShaderResourceView);
 		// == Set the Sampler State
-		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.MinLOD = -FLT_MAX;
-		samplerDesc.MaxLOD = FLT_MAX;
-		samplerDesc.MipLODBias = 0.0f;
-		samplerDesc.MaxAnisotropy = 1;
-		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-
 		pDevice->CreateSamplerState(&samplerDesc, &Ground.pSamplerState);
 		// == Set the InputLayout
 		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Ground.pInputLayout);
@@ -855,16 +867,6 @@ void ApplicationWindow::LoadObjects()
 		// == Set the Texture and ShaderResourceView
 		CreateDDSTextureFromFile(pDevice, L"BambooT.dds", NULL, &Bamboo.pShaderResourceView);
 		// == Set the Sampler State
-		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.MinLOD = -FLT_MAX;
-		samplerDesc.MaxLOD = FLT_MAX;
-		samplerDesc.MipLODBias = 0.0f;
-		samplerDesc.MaxAnisotropy = 1;
-		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-
 		pDevice->CreateSamplerState(&samplerDesc, &Bamboo.pSamplerState);
 		// == Set the InputLayout
 		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Bamboo.pInputLayout);
@@ -882,31 +884,27 @@ void ApplicationWindow::LoadObjects()
 		// == Set the Texture and ShaderResourceView
 		CreateDDSTextureFromFile(pDevice, L"barrel_diffuse.dds", NULL, &Barrel.pShaderResourceView);
 		// == Set the Sampler State
-		samplerDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-		samplerDesc.MinLOD = -FLT_MAX;
-		samplerDesc.MaxLOD = FLT_MAX;
-		samplerDesc.MipLODBias = 0.0f;
-		samplerDesc.MaxAnisotropy = 1;
-		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-
 		pDevice->CreateSamplerState(&samplerDesc, &Barrel.pSamplerState);
 		// == Set the InputLayout
 		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Barrel.pInputLayout);
+		// == Setup the MoveComponent
+		Barrel.pMoveComponent = new MoveComponent(&Barrel);
+		XMFLOAT3* Waypoints = new XMFLOAT3[2];
+		Waypoints[0] = XMFLOAT3(-3, 0, 2); Waypoints[1] = XMFLOAT3(3, 0, 2);
+		Barrel.pMoveComponent->SetWaypoints(Waypoints, 2);
+		Barrel.pMoveComponent->Patrol(0);
 	}
 
 	// === Load the RTObject
 	{
 		// == Set the WorldMatrix
-		RTObject.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 3, 1);
+		RTObject.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 4, 1);
 		// == Setup the Verts Buffer
 		Vertex verts[4];
-		verts[0] = Vertex(-0.5f, -1, 0, 1, 0, 1, 0, 0, 0, -1);
-		verts[1] = Vertex(-0.5f, 1, 0, 1, 0, 0, 0, 0, 0, -1);
-		verts[2] = Vertex(0.5f, 1, 0, 1, 1, 0, 0, 0, 0, -1);
-		verts[3] = Vertex(0.5f, -1, 0, 1, 1, 1, 0, 0, 0, -1);
+		verts[0] = Vertex(-0.5f, -1, 0, 1, 1, 1, 0, 0, 0, -1);
+		verts[1] = Vertex(-0.5f, 1, 0, 1, 1, 0, 0, 0, 0, -1);
+		verts[2] = Vertex(0.5f, 1, 0, 1, 0, 0, 0, 0, 0, -1);
+		verts[3] = Vertex(0.5f, -1, 0, 1, 0, 1, 0, 0, 0, -1);
 		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bufferDesc.ByteWidth = sizeof(verts);
@@ -937,7 +935,27 @@ void ApplicationWindow::LoadObjects()
 		RTObject.pVertexShader = pModel_VS;
 		RTObject.pPixelShader = pModel_PS;
 		// == Set the Texture and ShaderResourceView
-		
+		pDevice->CreateShaderResourceView(pRenderTexture, NULL, &RTObject.pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &RTObject.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &RTObject.pInputLayout);
+		// == Set the VertexSize
+		RTObject.VertexSize = sizeof(Vertex);
+		// == Set the Number of Vertices
+		RTObject.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+	}
+
+	// === Load the PatrolPointLight
+	{
+		// == Set the WorldMatrix
+		PatrolPointLight.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 1, 3, 1);
+		// == Setup the MoveComponent
+		PatrolPointLight.pMoveComponent = new MoveComponent(&PatrolPointLight);
+		XMFLOAT3* Waypoints = new XMFLOAT3[4];
+		Waypoints[0] = XMFLOAT3(3, 1, 3); Waypoints[1] = XMFLOAT3(3, 1, -3); Waypoints[2] = XMFLOAT3(-3, 1, -3); Waypoints[3] = XMFLOAT3(-3, 1, 3);
+		PatrolPointLight.pMoveComponent->SetWaypoints(Waypoints, 4);
+		PatrolPointLight.pMoveComponent->Patrol(0);
 	}
 }
 
@@ -976,8 +994,6 @@ void ApplicationWindow::DrawObject(Object* _object)
 
 void ApplicationWindow::DrawScene()
 {
-	// === Update the Lighting
-	UpdateLighting();
 	// === Draw the Objects
 	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	pDeviceContext->RSSetState(pRS_CullBack);
@@ -1025,13 +1041,28 @@ void ApplicationWindow::UpdateLighting()
 	// === Light Input
 	mLights.mSpotLight.HandleInput(Time.Delta());
 
-	// === Update the Constant Buffer
+	// === PointLight Position
+	mLights.mPointLight.Position = XMFLOAT4(PatrolPointLight.GetPosition().x, PatrolPointLight.GetPosition().y, PatrolPointLight.GetPosition().z, 1);
+
+	// === Rotate Directional Lighting
+	XMFLOAT3 lightDir;
+	XMStoreFloat3(&lightDir, XMVector3Rotate(XMLoadFloat4(&mLights.mDirectionalLight.LightDirection), XMLoadFloat4(&XMFLOAT4(0, Time.Delta() / 4.0f, 0, 1))));
+	mLights.mDirectionalLight.LightDirection = XMFLOAT4(lightDir.x, lightDir.y, lightDir.z, 1);
+
+	// === Update the Constant Buffera
 	D3D11_MAPPED_SUBRESOURCE sceneSubResource;
 	pDeviceContext->Map(pLightConstantBuffer, 0, D3D11_MAP::D3D11_MAP_WRITE_DISCARD, NULL, &sceneSubResource);
 	memcpy(sceneSubResource.pData, &mLights, sizeof(Lights));
 	pDeviceContext->Unmap(pLightConstantBuffer, 0);
 
 	pDeviceContext->PSSetConstantBuffers(0, 1, &pLightConstantBuffer);
+}
+
+void ApplicationWindow::UpdateObjects()
+{
+	// === Update any Objects that need to be
+	Barrel.Update(Time.Delta());
+	PatrolPointLight.Update(Time.Delta());
 }
 // ============================= //
 

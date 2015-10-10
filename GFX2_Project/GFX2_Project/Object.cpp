@@ -5,6 +5,7 @@
 // ===== Constructor / Destructor ===== //
 Object::Object()
 {
+	// === Initialize Members
 	XMStoreFloat4x4(&WorldMatrix, XMMatrixIdentity());
 	pVertexBuffer = nullptr;
 	pIndexBuffer = nullptr;
@@ -14,6 +15,9 @@ Object::Object()
 	pTexture = nullptr;
 	VertexSize = 0;
 	NumIndexes = 0;
+
+	// === Initialize Components
+	pMoveComponent = nullptr;
 }
 
 Object::~Object()
@@ -29,3 +33,11 @@ Object::~Object()
 	// SAFE_RELEASE(pPixelShader);
 }
 // ==================================== //
+
+// ===== Interface ===== //
+void Object::Update(float _deltaTime)
+{
+	if (pMoveComponent != nullptr)
+		pMoveComponent->Update(_deltaTime);
+}
+// ===================== //

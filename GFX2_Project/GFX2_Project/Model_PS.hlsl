@@ -75,8 +75,8 @@ float4 main(P_INPUT _input) : SV_TARGET
 	// == Point Lighting
 	float4 pointColor = color;
 	lightDir = normalize(Light_Point.Position - _input.surfacePos);
-	lightRatio = clamp(dot(lightDir, _input.normal), 0, 1);
-	attenuation = 1.0 - clamp(length(lightDir / Light_Point.Radius), 0, 1);
+	lightRatio = clamp(dot(lightDir.xyz, _input.normal.xyz), 0, 1);
+	attenuation = 1.0 - clamp(length((Light_Point.Position - _input.surfacePos) / Light_Point.Radius), 0, 1);
 	pointColor[0] *= Light_Point.LightColor[0] * lightRatio * attenuation;
 	pointColor[1] *= Light_Point.LightColor[1] * lightRatio * attenuation;
 	pointColor[2] *= Light_Point.LightColor[2] * lightRatio * attenuation;

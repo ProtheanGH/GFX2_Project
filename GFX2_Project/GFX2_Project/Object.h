@@ -3,6 +3,8 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 
+#include "MoveComponent.h"
+
 using namespace DirectX;
 
 class Object
@@ -24,5 +26,12 @@ public:
 	ID3D11SamplerState*	pSamplerState;
 	unsigned int VertexSize;
 	unsigned int NumIndexes;
+
+	// === Componets
+	MoveComponent* pMoveComponent;
+
+	// ===== Functions
+	void Update(float _deltaTime);
+	XMFLOAT3 GetPosition() { return XMFLOAT3(WorldMatrix._41, WorldMatrix._42, WorldMatrix._43); }
 };
 
