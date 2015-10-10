@@ -79,6 +79,8 @@ class ApplicationWindow
 	// === Render Texture
 	ID3D11RenderTargetView*			pRenderTextureTargetView;
 	ID3D11Texture2D*				pRenderTexture;
+	ID3D11Texture2D*				pRTDepthStencil;
+	ID3D11DepthStencilView*			pRTDepthView;
 	// === Scene Objects
 	Object							Star;
 	Object							Ground;
@@ -123,7 +125,7 @@ private:
 	void InitializeDeviceAndSwapChain();
 	void InitializeRenderTarget();
 	void SetupViewport();
-	void InitializeDepthView();
+	void InitializeDepthView(ID3D11Texture2D* _depthStencil, ID3D11DepthStencilView* _depthView, int _width, int _height);
 	void InitializeBlendState();
 	void InitializeRasterizerStates();
 	void InitializeShaders();
@@ -191,7 +193,7 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	InitializeDeviceAndSwapChain();
 	InitializeRenderTarget();
 	SetupViewport();
-	InitializeDepthView();
+	InitializeDepthView(pDepthStencil, pDepthView, width, height);
 	InitializeBlendState();
 	InitializeRasterizerStates();
 	InitializeShaders();
@@ -283,9 +285,9 @@ bool ApplicationWindow::Run()
 
 	DrawSkybox(m_Camera);
 
-	DrawScene();
+	DrawRTObject();
 
-	DrawObject(&RTObject);
+	DrawScene();
 
 	// === Update all the Objects
 	UpdateObjects();
@@ -318,6 +320,8 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 
 		result = pDevice->CreateRenderTargetView(pBuffer, NULL, &pRenderTargetView);
 
+
+
 		pBuffer->Release();
 
 		DXGI_SWAP_CHAIN_DESC desc;
@@ -338,7 +342,7 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 		// === Recreate the Depth Buffer
 		SAFE_RELEASE(pDepthStencil);
 		SAFE_RELEASE(pDepthView);
-		InitializeDepthView();
+		InitializeDepthView(pDepthStencil, pDepthView, width, height);
 	}
 }
 // ============================ //
@@ -394,12 +398,12 @@ void ApplicationWindow::SetupViewport()
 	pDeviceContext->RSSetViewports(1, &viewPort);
 }
 
-void ApplicationWindow::InitializeDepthView()
+void ApplicationWindow::InitializeDepthView(ID3D11Texture2D* _depthStencil, ID3D11DepthStencilView* _depthView, int _width, int _height)
 {
 	// === Create the Depth-Stencil
 	D3D11_TEXTURE2D_DESC depthDesc;
-	depthDesc.Width = width;
-	depthDesc.Height = height;
+	depthDesc.Width = _width;
+	depthDesc.Height = _height;
 	depthDesc.MipLevels = 1;
 	depthDesc.ArraySize = 1;
 	depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
@@ -957,6 +961,13 @@ void ApplicationWindow::LoadObjects()
 		PatrolPointLight.pMoveComponent->SetWaypoints(Waypoints, 4);
 		PatrolPointLight.pMoveComponent->Patrol(0);
 	}
+}
+
+void ApplicationWindow::DrawRTObject()
+{
+	// == Set the Texture and ShaderResourceView
+//	pDevice->CreateShaderResourceView(pRenderTexture, NULL, &RTObject.pShaderResourceView);
+	DrawObject(&RTObject);
 }
 
 void ApplicationWindow::DrawObject(Object* _object)
