@@ -2,6 +2,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <iostream>
+#include <thread>
 
 #include "Camera.h"
 #include "DDSTextureLoader.h"
@@ -89,6 +90,7 @@ class ApplicationWindow
 	Object							Barrel;
 	Object							RTObject;
 	Object							PatrolPointLight;
+	Object							CherryTree;
 	// === Lights
 	Lights							mLights;
 	DirectionalLight				mDirectionalLight;
@@ -140,7 +142,7 @@ private:
 	void DrawRTObject();
 	void DrawObject(Object* _object);
 	void DrawScene();
-	void LoadObjectModel(const char* _path, Object& _object);
+	thread* LoadObjectModel(const char* _path, Object& _object);
 	void LoadObjects();
 	void UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix);
 	void UpdateLighting();
@@ -543,7 +545,7 @@ void ApplicationWindow::CreateLights()
 	// === Ambient Light
 	mAmbientLight.LightColor = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
 	// === Directional Light
-	mDirectionalLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
+	mDirectionalLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.96f, 1.0f);
 	mDirectionalLight.LightDirection = XMFLOAT4(1, -1, 0, 0);
 	// === Point Light
 	mPointLight.LightColor = XMFLOAT4(0.96f, 0.95f, 0.35f, 1.0f);
@@ -688,19 +690,23 @@ void ApplicationWindow::DrawSkybox(Camera _camera)
 // - LoadObjectModel
 // --- Loads in the data from an obj file
 // --- Sets up the Vertex Buffer, Index Buffer, Vertex Size, and Number of Indexes
-void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
+thread* ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 {
-	vector<Vector3> positions, uvs, normals;
-	vector<Vertex> vertices;
-	vector<unsigned int> indexes;
+//	vector<Vector3> positions, uvs, normals;
+//	vector<Vertex> vertices;
+//	vector<unsigned int> indexes;
+	ObjectData modelData;
+	modelData.path = _path;
 	// === Load the Data from the filepath
-	LoadObjFile(_path, positions, uvs, normals);
+	thread* objThread = new thread(LoadObjFile, &modelData);
+//	thread thread = thread(LoadObjFile, _path, &positions, &uvs, &normals);
+//	LoadObjFile(_path, positions, uvs, normals);
 	// === Cycle through the data, setting up the actaul object
-	Vertex vert;
-	Vertex* objectVertices = new Vertex[positions.size()];
-	unsigned int* objectIndexes = new unsigned int[positions.size()];
-	for (unsigned int i = 0; i < positions.size(); i++) {
-		objectVertices[i] = Vertex(positions[i].x, positions[i].y, positions[i].z, 1, uvs[i].x, uvs[i].y, uvs[i].z, normals[i].x, normals[i].y, normals[i].z);
+//	Vertex vert;
+	Vertex* objectVertices = new Vertex[modelData.vertices.size()];
+	unsigned int* objectIndexes = new unsigned int[modelData.vertices.size()];
+	for (unsigned int i = 0; i < modelData.vertices.size(); i++) {
+		objectVertices[i] = Vertex(modelData.vertices[i].x, modelData.vertices[i].y, modelData.vertices[i].z, 1, modelData.uvs[i].x, modelData.uvs[i].y, modelData.uvs[i].z, modelData.normals[i].x, modelData.normals[i].y, modelData.normals[i].z);
 		objectIndexes[i] = i;
 	}
 	// === Setup the Object
@@ -709,7 +715,7 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	D3D11_SUBRESOURCE_DATA initData;
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bufferDesc.ByteWidth = sizeof(Vertex) * positions.size();
+	bufferDesc.ByteWidth = sizeof(Vertex) * modelData.vertices.size();
 	bufferDesc.CPUAccessFlags = NULL;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
@@ -722,7 +728,7 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	// == Index Buffer
 	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bufferDesc.ByteWidth = sizeof(unsigned int) * positions.size();
+	bufferDesc.ByteWidth = sizeof(unsigned int) * modelData.vertices.size();
 	bufferDesc.CPUAccessFlags = NULL;
 	bufferDesc.MiscFlags = 0;
 	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -736,7 +742,9 @@ void ApplicationWindow::LoadObjectModel(const char* _path, Object& _object)
 	// == Set the VertexSize
 	_object.VertexSize = sizeof(Vertex);
 	// == Set the Number of Vertices
-	_object.NumIndexes = positions.size();
+	_object.NumIndexes = modelData.vertices.size();
+
+	return objThread;
 }
 
 void ApplicationWindow::LoadObjects()
@@ -753,6 +761,79 @@ void ApplicationWindow::LoadObjects()
 	samplerDesc.MipLODBias = 0.0f;
 	samplerDesc.MaxAnisotropy = 1;
 	samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	
+	// === Load all Objects from File
+	// == Create all needed Threads;
+	thread loadingThreads[3];
+	ModelData modelData[3];
+	// === Load the Bamboo
+	{
+		// == Set the WorldMatrix
+		Bamboo.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 0.2, 3, 1);
+		// == Start a thread to Load the Object
+		modelData[0].path = "SingleBamboo.obj";
+		modelData[0].object = &Bamboo;
+		modelData[0].device = pDevice;
+		loadingThreads[0] = thread(LoadObjFile_Thread, &modelData[0]);
+		// == Set the Shaders
+		Bamboo.pVertexShader = pModel_VS;
+		Bamboo.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"BambooT.dds", NULL, &Bamboo.pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &Bamboo.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Bamboo.pInputLayout);
+	}
+
+	// === Load the Barrel
+	{
+		// == Set the WorldMatrix
+		XMStoreFloat4x4(&Barrel.WorldMatrix, XMMatrixMultiply(XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 2, 1), XMMatrixScaling(0.5f, 0.5f, 0.5f)));
+		// == Start a thread to Load the Object
+		modelData[1].path = "Barrel.obj";
+		modelData[1].object = &Barrel;
+		modelData[1].device = pDevice;
+		loadingThreads[1] = thread(LoadObjFile_Thread, &modelData[1]);
+		// == Set the Shaders
+		Barrel.pVertexShader = pModel_VS;
+		Barrel.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"barrel_diffuse.dds", NULL, &Barrel.pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &Barrel.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Barrel.pInputLayout);
+		// == Setup the MoveComponent
+		Barrel.pMoveComponent = new MoveComponent(&Barrel);
+		XMFLOAT3* Waypoints = new XMFLOAT3[2];
+		Waypoints[0] = XMFLOAT3(-3, 0, 2); Waypoints[1] = XMFLOAT3(3, 0, 2);
+		Barrel.pMoveComponent->SetWaypoints(Waypoints, 2);
+		Barrel.pMoveComponent->Patrol(0);
+	}
+
+	// === Load the CherryTree
+	{
+		// == Set the WorldMatrix
+		XMStoreFloat4x4(&CherryTree.WorldMatrix, XMMatrixMultiply(XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 0, 7, 1), XMMatrixScaling(0.75f, 0.75f, 0.75f)));
+		// == Start a thread to Load the Object
+		modelData[2].path = "CherryTree.obj";
+		modelData[2].object = &CherryTree;
+		modelData[2].device = pDevice;
+		loadingThreads[2] = thread(LoadObjFile_Thread, &modelData[2]);
+		// == Set the Shaders
+		CherryTree.pVertexShader = pModel_VS;
+		CherryTree.pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"cherryblossomtree.dds", NULL, &CherryTree.pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &CherryTree.pSamplerState);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &CherryTree.pInputLayout);
+	}
+
+	// === Load Custom Objects
+
 	// === Load the Star Object
 	{
 		// == Set the WorldMatrix
@@ -813,11 +894,11 @@ void ApplicationWindow::LoadObjects()
 		XMStoreFloat4x4(&Ground.WorldMatrix, XMMatrixIdentity());
 		// == Set the Vertex Buffer
 		Vertex groundVerts[4];
-		float radius = 4.0f;
+		float radius = 8.0f;
 		groundVerts[0] = Vertex(-radius, 0, radius, 1, 0, 0, 0, 0, 1, 0);
-		groundVerts[1] = Vertex(-radius, 0, -radius, 1, 0, 4, 0, 0, 1, 0);
-		groundVerts[2] = Vertex(radius, 0, radius, 1, 4, 0, 0, 0, 1, 0);
-		groundVerts[3] = Vertex(radius, 0, -radius, 1, 4, 4, 0, 0, 1, 0);
+		groundVerts[1] = Vertex(-radius, 0, -radius, 1, 0, radius / 2.0f, 0, 0, 1, 0);
+		groundVerts[2] = Vertex(radius, 0, radius, 1, radius / 2.0f, 0, 0, 0, 1, 0);
+		groundVerts[3] = Vertex(radius, 0, -radius, 1, radius / 2.0f, radius / 2.0f, 0, 0, 1, 0);
 		ZeroMemory(&bufferDesc, sizeof(bufferDesc));
 		bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bufferDesc.ByteWidth = sizeof(groundVerts);
@@ -857,46 +938,6 @@ void ApplicationWindow::LoadObjects()
 		Ground.VertexSize = sizeof(Vertex);
 		// == Set the Number of Vertices
 		Ground.NumIndexes = sizeof(indexes) / sizeof(unsigned int);
-	}
-
-	// === Load the Bamboo
-	{
-		// == Set the WorldMatrix
-		Bamboo.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 0.2, 3, 1);
-		// == Load the Obj File, Set up Vertex and Index Buffers
-		LoadObjectModel("SingleBamboo.obj", Bamboo);
-		// == Set the Shaders
-		Bamboo.pVertexShader = pModel_VS;
-		Bamboo.pPixelShader = pModel_PS;
-		// == Set the Texture and ShaderResourceView
-		CreateDDSTextureFromFile(pDevice, L"BambooT.dds", NULL, &Bamboo.pShaderResourceView);
-		// == Set the Sampler State
-		pDevice->CreateSamplerState(&samplerDesc, &Bamboo.pSamplerState);
-		// == Set the InputLayout
-		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Bamboo.pInputLayout);
-	}
-
-	// === Load the Barrel
-	{
-		// == Set the WorldMatrix
-		XMStoreFloat4x4(&Barrel.WorldMatrix, XMMatrixMultiply(XMMATRIX(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 2, 1), XMMatrixScaling(0.5f, 0.5f, 0.5f)));
-		// == Load the Obj File, Set up Vertex and Index Buffers
-		LoadObjectModel("Barrel.obj", Barrel);
-		// == Set the Shaders
-		Barrel.pVertexShader = pModel_VS;
-		Barrel.pPixelShader = pModel_PS;
-		// == Set the Texture and ShaderResourceView
-		CreateDDSTextureFromFile(pDevice, L"barrel_diffuse.dds", NULL, &Barrel.pShaderResourceView);
-		// == Set the Sampler State
-		pDevice->CreateSamplerState(&samplerDesc, &Barrel.pSamplerState);
-		// == Set the InputLayout
-		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &Barrel.pInputLayout);
-		// == Setup the MoveComponent
-		Barrel.pMoveComponent = new MoveComponent(&Barrel);
-		XMFLOAT3* Waypoints = new XMFLOAT3[2];
-		Waypoints[0] = XMFLOAT3(-3, 0, 2); Waypoints[1] = XMFLOAT3(3, 0, 2);
-		Barrel.pMoveComponent->SetWaypoints(Waypoints, 2);
-		Barrel.pMoveComponent->Patrol(0);
 	}
 
 	// === Load the RTObject
@@ -961,6 +1002,11 @@ void ApplicationWindow::LoadObjects()
 		PatrolPointLight.pMoveComponent->SetWaypoints(Waypoints, 4);
 		PatrolPointLight.pMoveComponent->Patrol(0);
 	}
+
+	// === Wait for all the Loading Threads to finish
+	for (int i = 0; i < 3; i++) {
+		loadingThreads[i].join();
+	}
 }
 
 void ApplicationWindow::DrawRTObject()
@@ -1007,11 +1053,16 @@ void ApplicationWindow::DrawScene()
 {
 	// === Draw the Objects
 	pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	// == Objects with Front Culling
+	pDeviceContext->RSSetState(pRS_CullFront);
+	DrawObject(&CherryTree);
+	// == Objects with Back Culling
 	pDeviceContext->RSSetState(pRS_CullBack);
 	DrawObject(&Ground);
 	DrawObject(&Star);
 	DrawObject(&Bamboo);
 	DrawObject(&Barrel);
+	DrawObject(&CherryTree);
 }
 
 void ApplicationWindow::UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix)

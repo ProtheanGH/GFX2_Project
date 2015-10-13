@@ -1,9 +1,11 @@
 #pragma once
 
+#include <d3d11.h>
 #include <DirectXMath.h>
 #include <vector>
 
 #include "Object.h"
+#include "Vertex_Inputs.h"
 
 using namespace DirectX;
 using std::vector;
@@ -13,13 +15,28 @@ struct Vector3
 	float x, y, z;
 };
 
+struct ObjectData
+{
+	const char * path;
+	vector<Vector3> vertices;
+	vector<Vector3> uvs;
+	vector<Vector3> normals;
+};
+
+struct ModelData
+{
+	const char*		path;
+	Object*			object;
+	ID3D11Device*	device;
+};
+
 // === Loading Obj File Data
-bool LoadObjFile(const char * _path, vector<Vector3>& _vertices, vector<Vector3>& _uvs, vector<Vector3>& _normals)
+bool LoadObjFile(ObjectData* _objectData)
 {
 	vector<unsigned int> vertexIndexes, uvIndexes, normalIndexes;
 	vector<Vector3> tempVertices, tempUVs, tempNormals;
 	FILE* file;
-	fopen_s(&file, _path, "r");
+	fopen_s(&file, _objectData->path, "r");
 	if (file == NULL)
 		return false;
 
@@ -67,12 +84,64 @@ bool LoadObjFile(const char * _path, vector<Vector3>& _vertices, vector<Vector3>
 	// === Cycle through each triangle
 	for (unsigned int i = 0; i < vertexIndexes.size(); i++) {
 		Vector3 vertex = tempVertices[vertexIndexes[i] - 1];
-		_vertices.push_back(vertex);
+		_objectData->vertices.push_back(vertex);
 		Vector3 uv = tempUVs[uvIndexes[i] - 1];
-		_uvs.push_back(uv);
+		_objectData->uvs.push_back(uv);
 		Vector3 normal = tempNormals[normalIndexes[i] - 1];
-		_normals.push_back(normal);
+		_objectData->normals.push_back(normal);
 	}
 	
 	return true;
 }
+
+void LoadObjFile_Thread(ModelData* _modelData)
+{
+	ObjectData objData;
+	objData.path = _modelData->path;
+
+	// === Load the Data from the file
+	LoadObjFile(&objData);
+
+	// === Cycle through the data, setting up the actaul object
+	Vertex* objectVertices = new Vertex[objData.vertices.size()];
+	unsigned int* objectIndexes = new unsigned int[objData.vertices.size()];
+	for (unsigned int i = 0; i < objData.vertices.size(); i++) {
+		objectVertices[i] = Vertex(objData.vertices[i].x, objData.vertices[i].y, objData.vertices[i].z, 1, objData.uvs[i].x, objData.uvs[i].y, objData.uvs[i].z, objData.normals[i].x, objData.normals[i].y, objData.normals[i].z);
+		objectIndexes[i] = i;
+	}
+
+	// === Setup the Object
+	// == Vertex Buffer
+	D3D11_BUFFER_DESC bufferDesc;
+	D3D11_SUBRESOURCE_DATA initData;
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(Vertex) * objData.vertices.size();
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+
+	initData.pSysMem = objectVertices;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	_modelData->device->CreateBuffer(&bufferDesc, &initData, &_modelData->object->pVertexBuffer);
+	// == Index Buffer
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(unsigned int) * objData.vertices.size();
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+	initData.pSysMem = objectIndexes;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	_modelData->device->CreateBuffer(&bufferDesc, &initData, &_modelData->object->pIndexBuffer);
+	// == Set the VertexSize
+	_modelData->object->VertexSize = sizeof(Vertex);
+	// == Set the Number of Vertices
+	_modelData->object->NumIndexes = objData.vertices.size();
+}
+

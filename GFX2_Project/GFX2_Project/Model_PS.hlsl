@@ -55,6 +55,8 @@ float4 main(P_INPUT _input) : SV_TARGET
 {
 	// === Get the pixel from the Texture
 	float4 color = baseTexture.Sample(filter, _input.UVCoords);
+	if (color[3] == 0)
+		discard;
 	// === Handle Lighting
 	float lightRatio;
 	float3 lightDir;
