@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ctime>
 #include <d3d11.h>
 #include <DirectXMath.h>
@@ -10,6 +11,7 @@
 #include "MoveComponent.h"
 #include "Object.h"
 #include "ObjLoader.h"
+#include "Utilities.h"
 #include "Vertex_Inputs.h"
 #include "XTime.h"
 
@@ -18,6 +20,8 @@
 #include "Model_VS.h"
 #include "Skybox_PS.h"
 #include "Skybox_VS.h"
+#include "Transparency_PS.h"
+#include "Transparency_VS.h"
 #include "VertexColor_PS.h"
 #include "VertexColor_VS.h"
 
@@ -91,6 +95,7 @@ class ApplicationWindow
 	Object							RTObject;
 	Object							PatrolPointLight;
 	Object							CherryTree;
+	vector<Object*>					TransparentObjects;
 	// === Lights
 	Lights							mLights;
 	DirectionalLight				mDirectionalLight;
@@ -138,9 +143,11 @@ private:
 	void CreateLights();
 	XMFLOAT4X4 CreateProjectionMatrix(float _fov, float _width, float _height);
 	void CreateSkybox();
+	void CreateCube(Object* _object, float _radius);
 	void DrawSkybox(Camera _camera);
 	void DrawRTObject();
 	void DrawObject(Object* _object);
+	void DrawTransparentObjects();
 	void DrawScene();
 	thread* LoadObjectModel(const char* _path, Object& _object);
 	void LoadObjects();
@@ -226,6 +233,10 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 // ===== CleanUp ===== //
 bool ApplicationWindow::ShutDown()
 {
+	// === Clean up all memory
+	for (unsigned int i = 0; i < TransparentObjects.size(); i++)
+		delete TransparentObjects[i];
+
 	// === Release all DirectX Pointer Objects
 	SAFE_RELEASE(pSwapChain);
 	SAFE_RELEASE(pDevice);
@@ -673,6 +684,76 @@ void ApplicationWindow::CreateSkybox()
 	pDevice->CreateSamplerState(&samplerDesc, &Skybox.pSamplerState);
 }
 
+void ApplicationWindow::CreateCube(Object* _object, float _radius)
+{
+	// === Set up the Vertex Buffer and Index Buffer
+	Vertex vertices[24];
+	// == Front Face
+	vertices[0] = Vertex(-_radius, _radius, _radius, 1, 0, 0, 0, 0, 0, -1);
+	vertices[1] = Vertex(_radius, _radius, _radius, 1, 1, 0, 0, 0, 0, -1);
+	vertices[2] = Vertex(-_radius, -_radius, _radius, 1, 0, 1, 0, 0, 0, -1);
+	vertices[3] = Vertex(_radius, -_radius, _radius, 1, 1, 1, 0, 0, 0, -1);
+	// == Back Face
+	vertices[4] = Vertex(_radius, _radius, -_radius, 1, 0, 0, 0, 0, 0, 1);
+	vertices[5] = Vertex(-_radius, _radius, -_radius, 1, 1, 0, 0, 0, 0, 1);
+	vertices[6] = Vertex(_radius, -_radius, -_radius, 1, 0, 1, 0, 0, 0, 1);
+	vertices[7] = Vertex(-_radius, -_radius, -_radius, 1, 1, 1, 0, 0, 0, 1);
+	// == Left Face
+	vertices[8] = Vertex(-_radius, _radius, -_radius, 1, 1, 0, 0, -1, 0, 0);
+	vertices[9] = Vertex(-_radius, _radius, _radius, 1, 0, 0, 0, -1, 0, 0);
+	vertices[10] = Vertex(-_radius, -_radius, -_radius, 1, 1, 1, 0, -1, 0, 0);
+	vertices[11] = Vertex(-_radius, -_radius, _radius, 1, 0, 1, 0, -1, 0, 0);
+	// == Right Face
+	vertices[12] = Vertex(_radius, _radius, _radius, 1, 1, 0, 0, 1, 0, 0);
+	vertices[13] = Vertex(_radius, _radius, -_radius, 1, 0, 0, 0, 1, 0, 0);
+	vertices[14] = Vertex(_radius, -_radius, _radius, 1, 1, 1, 0, 1, 0, 0);
+	vertices[15] = Vertex(_radius, -_radius, -_radius, 1, 0, 1, 0, 1, 0, 0);
+	// == Top Face
+	vertices[16] = Vertex(-_radius, _radius, -_radius, 1, 0, 1, 0, 0, 1, 0);
+	vertices[17] = Vertex(_radius, _radius, -_radius, 1, 1, 1, 0, 0, 1, 0);
+	vertices[18] = Vertex(-_radius, _radius, _radius, 1, 0, 0, 0, 0, 1, 0);
+	vertices[19] = Vertex(_radius, _radius, _radius, 1, 1, 0, 0, 0, 1, 0);
+	// == Bottom Face
+	vertices[20] = Vertex(-_radius, -_radius, _radius, 1, 0, 1, 0, 0, -1, 0);
+	vertices[21] = Vertex(_radius, -_radius, _radius, 1, 1, 1, 0, 0, -1, 0);
+	vertices[22] = Vertex(-_radius, -_radius, -_radius, 1, 0, 0, 0, 0, -1, 0);
+	vertices[23] = Vertex(_radius, -_radius, -_radius, 1, 1, 0, 0, 0, -1, 0);
+	// == Triangles (Indexes)
+	unsigned int indexes[] = { 0, 2, 3, 0, 3, 1, 4, 6, 7, 4, 7, 5, 8, 10, 11, 8, 11, 9, 12, 14, 15, 12, 15, 13, 16, 18, 19, 16, 19, 17, 20, 22, 23, 20, 23, 21 };
+	// == Setup Vertex Buffer
+	D3D11_BUFFER_DESC bufferDesc;
+	D3D11_SUBRESOURCE_DATA initData;
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(vertices);
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+
+	initData.pSysMem = vertices;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	pDevice->CreateBuffer(&bufferDesc, &initData, &_object->pVertexBuffer);
+	// == Index Buffer
+	ZeroMemory(&bufferDesc, sizeof(bufferDesc));
+	bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	bufferDesc.ByteWidth = sizeof(indexes);
+	bufferDesc.CPUAccessFlags = NULL;
+	bufferDesc.MiscFlags = 0;
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+	initData.pSysMem = indexes;
+	initData.SysMemPitch = 0;
+	initData.SysMemSlicePitch = 0;
+
+	pDevice->CreateBuffer(&bufferDesc, &initData, &_object->pIndexBuffer);
+	// == Vertex Size
+	_object->VertexSize = sizeof(Vertex);
+	// == Number of Indexes
+	_object->NumIndexes = sizeof(indexes) / sizeof(unsigned int);
+}
+
 void ApplicationWindow::DrawSkybox(Camera _camera)
 {
 	// === Move the Skybox to the Camera's position
@@ -994,13 +1075,67 @@ void ApplicationWindow::LoadObjects()
 	// === Load the PatrolPointLight
 	{
 		// == Set the WorldMatrix
-		PatrolPointLight.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 1, 3, 1);
+		PatrolPointLight.WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 1, -4, 1);
 		// == Setup the MoveComponent
 		PatrolPointLight.pMoveComponent = new MoveComponent(&PatrolPointLight);
-		XMFLOAT3* Waypoints = new XMFLOAT3[4];
-		Waypoints[0] = XMFLOAT3(3, 1, 3); Waypoints[1] = XMFLOAT3(3, 1, -3); Waypoints[2] = XMFLOAT3(-3, 1, -3); Waypoints[3] = XMFLOAT3(-3, 1, 3);
-		PatrolPointLight.pMoveComponent->SetWaypoints(Waypoints, 4);
+		XMFLOAT3* Waypoints = new XMFLOAT3[2];
+		Waypoints[0] = XMFLOAT3(5, 1, -4); Waypoints[1] = XMFLOAT3(1, 1, -4);
+		PatrolPointLight.pMoveComponent->SetWaypoints(Waypoints, 2);
 		PatrolPointLight.pMoveComponent->Patrol(0);
+	}
+
+	// === Load the Transparent Cubes
+	{
+		// === Cube 1
+		Object* cube = new Object();
+		// == Set the WorldMatrix
+		cube->WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0.515f, -4, 1);
+		// == Create a Cube Model
+		CreateCube(cube, 0.5f);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &cube->pInputLayout);
+		// == Set the Shaders
+		cube->pVertexShader = pModel_VS;
+		cube->pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"WindowedBox.dds", NULL, &cube->pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &cube->pSamplerState);
+		TransparentObjects.push_back(cube);
+
+		// === Cube 2
+		cube = new Object();
+		// == Set the WorldMatrix
+		cube->WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0.55f, -4, 1);
+		// == Create a Cube Model
+		CreateCube(cube, 0.5f);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &cube->pInputLayout);
+		// == Set the Shaders
+		cube->pVertexShader = pModel_VS;
+		cube->pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"WindowedBox.dds", NULL, &cube->pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &cube->pSamplerState);
+		TransparentObjects.push_back(cube);
+
+		// === Cube 3
+		cube = new Object();
+		// == Set the WorldMatrix
+		cube->WorldMatrix = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0.55f, -4, 1);
+		// == Create a Cube Model
+		CreateCube(cube, 0.5f);
+		// == Set the InputLayout
+		pDevice->CreateInputLayout(Layout_Vertex, sizeof(Layout_Vertex) / sizeof(D3D11_INPUT_ELEMENT_DESC), Model_VS, sizeof(Model_VS), &cube->pInputLayout);
+		// == Set the Shaders
+		cube->pVertexShader = pModel_VS;
+		cube->pPixelShader = pModel_PS;
+		// == Set the Texture and ShaderResourceView
+		CreateDDSTextureFromFile(pDevice, L"WindowedBox.dds", NULL, &cube->pShaderResourceView);
+		// == Set the Sampler State
+		pDevice->CreateSamplerState(&samplerDesc, &cube->pSamplerState);
+		TransparentObjects.push_back(cube);
 	}
 
 	// === Wait for all the Loading Threads to finish
@@ -1049,6 +1184,26 @@ void ApplicationWindow::DrawObject(Object* _object)
 	pDeviceContext->DrawIndexed(_object->NumIndexes, 0, 0);
 }
 
+void ApplicationWindow::DrawTransparentObjects()
+{
+	// === Determine the Distances
+	for (unsigned int i = 0; i < TransparentObjects.size(); i++) {
+		XMFLOAT3 distance;
+		XMStoreFloat3(&distance, XMVector3Length(XMVectorSubtract(XMLoadFloat3(&TransparentObjects[i]->GetPosition()), XMLoadFloat3(&m_Camera.GetPosition()))));
+		TransparentObjects[i]->DistanceFromCamera = distance.x;
+	}
+	// === Sort the Objects furthest to closest
+	sort(TransparentObjects.begin(), TransparentObjects.end(), SortByDistance);
+
+	// === Draw the Objects
+	for (unsigned int i = 0; i < TransparentObjects.size(); i++) {
+		pDeviceContext->RSSetState(pRS_CullFront);
+		DrawObject(TransparentObjects[i]);
+		pDeviceContext->RSSetState(pRS_CullBack);
+		DrawObject(TransparentObjects[i]);
+	}
+}
+
 void ApplicationWindow::DrawScene()
 {
 	// === Draw the Objects
@@ -1063,6 +1218,8 @@ void ApplicationWindow::DrawScene()
 	DrawObject(&Bamboo);
 	DrawObject(&Barrel);
 	DrawObject(&CherryTree);
+	// == Transparent Objects
+	DrawTransparentObjects();
 }
 
 void ApplicationWindow::UpdateSceneBuffer(Camera _camera, XMFLOAT4X4 _projMatrix)

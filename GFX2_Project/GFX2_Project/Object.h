@@ -26,6 +26,7 @@ public:
 	ID3D11SamplerState*	pSamplerState;
 	unsigned int VertexSize;
 	unsigned int NumIndexes;
+	float DistanceFromCamera;
 
 	// === Componets
 	MoveComponent* pMoveComponent;
