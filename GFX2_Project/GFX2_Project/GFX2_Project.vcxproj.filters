@@ -50,8 +50,6 @@
     <FxCompile Include="Model_VS.hlsl" />
     <FxCompile Include="Skybox_PS.hlsl" />
     <FxCompile Include="Skybox_VS.hlsl" />
-    <FxCompile Include="Transparency_PS.hlsl" />
-    <FxCompile Include="Transparency_VS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Color.h">
@@ -95,12 +93,6 @@
     </ClInclude>
     <ClInclude Include="MoveComponent.h">
       <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Transparency_PS.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Transparency_VS.h">
-      <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Utilities.h">
       <Filter>Utilities</Filter>

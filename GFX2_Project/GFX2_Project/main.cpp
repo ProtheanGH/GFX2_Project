@@ -63,6 +63,7 @@ class ApplicationWindow
 	ID3D11DeviceContext*			pDeviceContext;
 	ID3D11RenderTargetView*			pRenderTargetView;
 	D3D11_VIEWPORT					viewPort;
+	D3D11_VIEWPORT					viewPortMiniMap;
 	ID3D11Texture2D*				pDepthStencil;
 	ID3D11DepthStencilView*			pDepthView;
 	ID3D11BlendState*				pBlendState;
@@ -131,8 +132,9 @@ private:
 	// ===== D3D11 Initialization Functions
 	void InitializeDeviceAndSwapChain();
 	void InitializeRenderTarget();
-	void SetupViewport();
-	void InitializeDepthView(ID3D11Texture2D* _depthStencil, ID3D11DepthStencilView* _depthView, int _width, int _height);
+	void SetupViewports();
+	void InitializeDepthView(int _width, int _height);
+	void InitializeRTDepthView(int _width, int _height);
 	void InitializeBlendState();
 	void InitializeRasterizerStates();
 	void InitializeShaders();
@@ -201,8 +203,9 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	// === DirectX Initialization
 	InitializeDeviceAndSwapChain();
 	InitializeRenderTarget();
-	SetupViewport();
-	InitializeDepthView(pDepthStencil, pDepthView, width, height);
+	SetupViewports();
+	InitializeDepthView(width, height);
+	InitializeRTDepthView(width, height);
 	InitializeBlendState();
 	InitializeRasterizerStates();
 	InitializeShaders();
@@ -258,6 +261,8 @@ bool ApplicationWindow::ShutDown()
 	SAFE_RELEASE(pVertexColor_VS);
 	SAFE_RELEASE(pRenderTextureTargetView);
 	SAFE_RELEASE(pRenderTexture);
+	SAFE_RELEASE(pRTDepthStencil);
+	SAFE_RELEASE(pRTDepthView);
 
 	UnregisterClass(L"DirectXApplication", application);
 	return true;
@@ -277,10 +282,10 @@ bool ApplicationWindow::Run()
 	UpdateLighting();
 
 	// === Render to Texture
-	pDeviceContext->OMSetRenderTargets(1, &pRenderTextureTargetView, pDepthView);
+	pDeviceContext->OMSetRenderTargets(1, &pRenderTextureTargetView, pRTDepthView);
 	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
 	pDeviceContext->ClearRenderTargetView(pRenderTextureTargetView, RED);
-	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
+	pDeviceContext->ClearDepthStencilView(pRTDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
 
 	UpdateSceneBuffer(m_SecondaryCamera, SecondaryProjectionMatrix);
 
@@ -346,7 +351,7 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 		pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, NULL);
 
 		// === Set up the viewport.
-		SetupViewport();
+		SetupViewports();
 
 		// === Create the Projection Matrix
 		ProjectionMatrix = CreateProjectionMatrix(65.0f, (float)_width, (float)_height);
@@ -355,7 +360,7 @@ void ApplicationWindow::ResizeWindow(int _width, int _height)
 		// === Recreate the Depth Buffer
 		SAFE_RELEASE(pDepthStencil);
 		SAFE_RELEASE(pDepthView);
-		InitializeDepthView(pDepthStencil, pDepthView, width, height);
+		InitializeDepthView(width, height);
 	}
 }
 // ============================ //
@@ -396,11 +401,12 @@ void ApplicationWindow::InitializeRenderTarget()
 	SAFE_RELEASE(pBackBuffer);
 }
 
-void ApplicationWindow::SetupViewport()
+void ApplicationWindow::SetupViewports()
 {
+	// === Main Viewport
 	DXGI_SWAP_CHAIN_DESC swapDesc;
 	ZeroMemory(&swapDesc, sizeof(swapDesc));
-	pSwapChain->GetDesc(&swapDesc);
+//	pSwapChain->GetDesc(&swapDesc);
 	viewPort.Height = height;
 	viewPort.Width = width;
 	viewPort.MinDepth = 0;
@@ -409,9 +415,20 @@ void ApplicationWindow::SetupViewport()
 	viewPort.TopLeftY = 0;
 
 	pDeviceContext->RSSetViewports(1, &viewPort);
+
+	// === MiniMap
+	float mHeight = height * 0.2f;
+	float mWidth = width * 0.2f;
+	ZeroMemory(&swapDesc, sizeof(swapDesc));
+	viewPortMiniMap.Height = mHeight;
+	viewPortMiniMap.Width = mWidth;
+	viewPortMiniMap.MinDepth = 0;
+	viewPortMiniMap.MaxDepth = 1;
+	viewPortMiniMap.TopLeftX = width * 0.75f;
+	viewPortMiniMap.TopLeftY = height * 0.05f;
 }
 
-void ApplicationWindow::InitializeDepthView(ID3D11Texture2D* _depthStencil, ID3D11DepthStencilView* _depthView, int _width, int _height)
+void ApplicationWindow::InitializeDepthView(int _width, int _height)
 {
 	// === Create the Depth-Stencil
 	D3D11_TEXTURE2D_DESC depthDesc;
@@ -437,6 +454,34 @@ void ApplicationWindow::InitializeDepthView(ID3D11Texture2D* _depthStencil, ID3D
 	dViewDesc.Texture2D.MipSlice = 0;
 
 	pDevice->CreateDepthStencilView(pDepthStencil, &dViewDesc, &pDepthView);
+}
+
+void ApplicationWindow::InitializeRTDepthView(int _width, int _height)
+{
+	// === Create the Depth-Stencil
+	D3D11_TEXTURE2D_DESC depthDesc;
+	depthDesc.Width = _width;
+	depthDesc.Height = _height;
+	depthDesc.MipLevels = 1;
+	depthDesc.ArraySize = 1;
+	depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	depthDesc.SampleDesc.Count = 1;
+	depthDesc.SampleDesc.Quality = 0;
+	depthDesc.Usage = D3D11_USAGE_DEFAULT;
+	depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	depthDesc.CPUAccessFlags = 0;
+	depthDesc.MiscFlags = 0;
+
+	pDevice->CreateTexture2D(&depthDesc, NULL, &pRTDepthStencil);
+
+	// === Create the Depth-Stencil View
+	D3D11_DEPTH_STENCIL_VIEW_DESC dViewDesc;
+	ZeroMemory(&dViewDesc, sizeof(dViewDesc));
+	dViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	dViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DMS;
+	dViewDesc.Texture2D.MipSlice = 0;
+
+	pDevice->CreateDepthStencilView(pRTDepthStencil, &dViewDesc, &pRTDepthView);
 }
 
 void ApplicationWindow::InitializeBlendState()
