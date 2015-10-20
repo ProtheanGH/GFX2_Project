@@ -113,6 +113,24 @@ XMMATRIX Camera::GetViewXMMatrix()
 		ViewMatrix._41, ViewMatrix._42, ViewMatrix._43, ViewMatrix._44);
 }
 
+void Camera::SetPosition(XMFLOAT3 _pos)
+{
+	// === Put it in World Space
+	XMMATRIX matrix = Float4x4ToXMMAtrix(ViewMatrix);
+	XMVECTOR determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
+	XMStoreFloat4x4(&ViewMatrix, matrix);
+	// === Set the Position
+	ViewMatrix._41 = _pos.x;
+	ViewMatrix._42 = _pos.y;
+	ViewMatrix._43 = _pos.z;
+	// === Bring it back to View Space
+	matrix = Float4x4ToXMMAtrix(ViewMatrix);
+	determinant = XMMatrixDeterminant(matrix);
+	matrix = XMMatrixInverse(&determinant, matrix);
+	XMStoreFloat4x4(&ViewMatrix, matrix);
+}
+
 XMFLOAT3 Camera::GetPosition()
 {
 	XMMATRIX matrix = Float4x4ToXMMAtrix(ViewMatrix);

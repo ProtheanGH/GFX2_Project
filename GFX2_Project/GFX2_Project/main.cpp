@@ -62,8 +62,7 @@ class ApplicationWindow
 	ID3D11Device*					pDevice;
 	ID3D11DeviceContext*			pDeviceContext;
 	ID3D11RenderTargetView*			pRenderTargetView;
-	D3D11_VIEWPORT					viewPort;
-	D3D11_VIEWPORT					viewPortMiniMap;
+	D3D11_VIEWPORT					viewPorts[2];
 	ID3D11Texture2D*				pDepthStencil;
 	ID3D11DepthStencilView*			pDepthView;
 	ID3D11BlendState*				pBlendState;
@@ -87,6 +86,10 @@ class ApplicationWindow
 	ID3D11Texture2D*				pRenderTexture;
 	ID3D11Texture2D*				pRTDepthStencil;
 	ID3D11DepthStencilView*			pRTDepthView;
+	// === Mini Map
+	ID3D11RenderTargetView*			pMMRenderTargetView;
+	ID3D11Texture2D*				pMMDepthStencil;
+	ID3D11DepthStencilView*			pMMDepthView;
 	// === Scene Objects
 	Object							Star;
 	Object							Ground;
@@ -106,8 +109,10 @@ class ApplicationWindow
 	// === Variables
 	Camera							m_Camera;
 	Camera							m_SecondaryCamera;
+	Camera							m_MiniMapCamera;
 	XMFLOAT4X4						ProjectionMatrix;
 	XMFLOAT4X4						SecondaryProjectionMatrix;
+	XMFLOAT4X4						MiniMapProjectionMatrix;
 	XTime							Time;
 	bool							KeyBuffer;
 	// === Colors
@@ -230,6 +235,16 @@ ApplicationWindow::ApplicationWindow(HINSTANCE hinst, WNDPROC proc)
 	XMStoreFloat4x4(&secondaryView, XMMatrixMultiply(XMMatrixRotationY(XMConvertToRadians(180)), Float4x4ToXMMAtrix(secondaryView)));
 	m_SecondaryCamera.SetViewMatrix(secondaryView);
 	// ===
+
+	// === Setup the MiniMap Camera
+	XMMATRIX miniMapView = XMMatrixIdentity();
+	XMVECTOR position = XMLoadFloat3(&m_Camera.GetPosition());
+	miniMapView = XMMatrixMultiply(XMMatrixTranslation(m_Camera.GetPosition().x, m_Camera.GetPosition().y + 2, m_Camera.GetPosition().z), miniMapView);
+	miniMapView = XMMatrixMultiply(XMMatrixRotationX(XMConvertToRadians(90)), miniMapView);
+	XMFLOAT4X4 view;
+	XMStoreFloat4x4(&view, miniMapView);
+	m_MiniMapCamera.SetViewMatrix(view);
+	// === 
 }
 // ======================= //
 
@@ -263,6 +278,9 @@ bool ApplicationWindow::ShutDown()
 	SAFE_RELEASE(pRenderTexture);
 	SAFE_RELEASE(pRTDepthStencil);
 	SAFE_RELEASE(pRTDepthView);
+	SAFE_RELEASE(pMMRenderTargetView);
+	SAFE_RELEASE(pMMDepthStencil);
+	SAFE_RELEASE(pMMDepthView);
 
 	UnregisterClass(L"DirectXApplication", application);
 	return true;
@@ -277,11 +295,15 @@ bool ApplicationWindow::Run()
 
 	// === Update Camera
 	m_Camera.HandleInput(Time.Delta());
+	XMFLOAT3 position = m_Camera.GetPosition();
+	position.y += 2;
+	m_MiniMapCamera.SetPosition(position);
 
 	// === Update the Lighting
 	UpdateLighting();
 
 	// === Render to Texture
+	pDeviceContext->RSSetViewports(1, &viewPorts[0]);
 	pDeviceContext->OMSetRenderTargets(1, &pRenderTextureTargetView, pRTDepthView);
 	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
 	pDeviceContext->ClearRenderTargetView(pRenderTextureTargetView, RED);
@@ -304,6 +326,19 @@ bool ApplicationWindow::Run()
 	DrawSkybox(m_Camera);
 
 	DrawRTObject();
+
+	DrawScene();
+
+	// === MiniMap Render
+	pDeviceContext->RSSetViewports(1, &viewPorts[1]);
+	pDeviceContext->OMSetRenderTargets(1, &pRenderTargetView, pDepthView);
+	pDeviceContext->OMSetBlendState(pBlendState, NULL, 0xffffffff);
+//	pDeviceContext->ClearRenderTargetView(pRenderTargetView, BLUE);
+	pDeviceContext->ClearDepthStencilView(pDepthView, D3D11_CLEAR_DEPTH, 1, NULL);
+
+	UpdateSceneBuffer(m_MiniMapCamera, MiniMapProjectionMatrix);
+
+	DrawSkybox(m_MiniMapCamera);
 
 	DrawScene();
 
@@ -407,25 +442,25 @@ void ApplicationWindow::SetupViewports()
 	DXGI_SWAP_CHAIN_DESC swapDesc;
 	ZeroMemory(&swapDesc, sizeof(swapDesc));
 //	pSwapChain->GetDesc(&swapDesc);
-	viewPort.Height = height;
-	viewPort.Width = width;
-	viewPort.MinDepth = 0;
-	viewPort.MaxDepth = 1;
-	viewPort.TopLeftX = 0;
-	viewPort.TopLeftY = 0;
-
-	pDeviceContext->RSSetViewports(1, &viewPort);
+	viewPorts[0].Height = height;
+	viewPorts[0].Width = width;
+	viewPorts[0].MinDepth = 0;
+	viewPorts[0].MaxDepth = 1;
+	viewPorts[0].TopLeftX = 0;
+	viewPorts[0].TopLeftY = 0;
 
 	// === MiniMap
 	float mHeight = height * 0.2f;
 	float mWidth = width * 0.2f;
 	ZeroMemory(&swapDesc, sizeof(swapDesc));
-	viewPortMiniMap.Height = mHeight;
-	viewPortMiniMap.Width = mWidth;
-	viewPortMiniMap.MinDepth = 0;
-	viewPortMiniMap.MaxDepth = 1;
-	viewPortMiniMap.TopLeftX = width * 0.75f;
-	viewPortMiniMap.TopLeftY = height * 0.05f;
+	viewPorts[1].Height = mHeight;
+	viewPorts[1].Width = mWidth;
+	viewPorts[1].MinDepth = 0;
+	viewPorts[1].MaxDepth = 1;
+	viewPorts[1].TopLeftX = width * 0.75f;
+	viewPorts[1].TopLeftY = height * 0.05f;
+	// == ProjectionMatrix
+	MiniMapProjectionMatrix = CreateProjectionMatrix(65, mWidth, mHeight);
 }
 
 void ApplicationWindow::InitializeDepthView(int _width, int _height)

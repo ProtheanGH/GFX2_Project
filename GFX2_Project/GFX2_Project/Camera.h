@@ -25,6 +25,7 @@ public:
 	void SetViewMatrix(XMFLOAT4X4 _viewMatrix);
 	XMFLOAT4X4 GetViewMatrix();
 	XMMATRIX GetViewXMMatrix();
+	void SetPosition(XMFLOAT3 _pos);
 	XMFLOAT3 GetPosition();
 };
 
